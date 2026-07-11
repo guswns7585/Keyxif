@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="keyxif_background">#FAFAF8</color>
+    <color name="keyxif_surface">#FFFFFF</color>
+    <color name="keyxif_ink">#161616</color>
+</resources>

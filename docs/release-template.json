@@ -1,0 +1,10 @@
+{
+  "latestVersionCode": 1,
+  "latestVersionName": "1.0",
+  "minRequiredVersionCode": 1,
+  "title": "새 버전이 있습니다",
+  "message": "템플릿 개선과 저장 안정성이 개선되었습니다.",
+  "apkUrl": "https://github.com/username/keyxif/releases/download/v1.0.0/keyxif-1.0.apk",
+  "releaseNoteUrl": "https://github.com/username/keyxif/releases/tag/v1.0.0",
+  "forceUpdate": false
+}
