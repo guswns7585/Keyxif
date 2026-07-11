@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+ workflow_dispatch:
 
 permissions:
   contents: write
@@ -34,7 +35,8 @@ jobs:
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keyxif-release.jks"
-
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
       - name: Build signed release APK
         env:
           CI: "true"
@@ -59,6 +61,7 @@ jobs:
           echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
+	if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
@@ -67,6 +70,7 @@ jobs:
           files: ${{ steps.version.outputs.apk_name }}
 
       - name: Generate update.json
+ 	if: github.event_name == 'push'
         shell: bash
         run: |
           OWNER_REPO="${GITHUB_REPOSITORY}"
@@ -89,6 +93,7 @@ jobs:
           EOF
 
       - name: Commit update.json
+ 	if: github.event_name == 'push'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
