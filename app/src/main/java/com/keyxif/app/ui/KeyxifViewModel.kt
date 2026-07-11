@@ -54,6 +54,7 @@ import com.keyxif.app.util.FileNameUtils
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -73,9 +74,11 @@ data class KeyxifUiState(
     val currentStep: AppStep = AppStep.Photos,
     val photos: List<PhotoItem> = emptyList(),
     val selectedPhotoId: String? = null,
+    val selectedExportPhotoIds: Set<String> = emptySet(),
     val selectedTemplate: CardTemplate = CardTemplate.ClassicFrame,
     val settings: AppSettings = AppSettings(),
     val isSettingsOpen: Boolean = false,
+    val settingsPageName: String? = null,
     val isGalleryOpen: Boolean = false,
     val exportedImages: List<ExportedImage> = emptyList(),
     val buildPresets: List<BuildPreset> = emptyList(),
@@ -141,11 +144,23 @@ class KeyxifViewModel(
     }
 
     fun closeSettings() {
-        _uiState.update { it.copy(isSettingsOpen = false) }
+        _uiState.update { state ->
+            if (state.settingsPageName != null) {
+                state.copy(settingsPageName = null)
+            } else {
+                state.copy(isSettingsOpen = false)
+            }
+        }
+    }
+
+    fun selectSettingsPage(name: String?) {
+        _uiState.update { state ->
+            if (state.isSettingsOpen) state.copy(settingsPageName = name) else state
+        }
     }
 
     fun openGallery() {
-        _uiState.update { it.copy(isGalleryOpen = true, isSettingsOpen = false) }
+        _uiState.update { it.copy(isGalleryOpen = true, isSettingsOpen = false, settingsPageName = null) }
     }
 
     fun closeGallery() {
@@ -266,6 +281,7 @@ class KeyxifViewModel(
             it.copy(
                 currentStep = step,
                 isSettingsOpen = false,
+                settingsPageName = null,
                 isGalleryOpen = false,
                 uiMessage = warning,
             )
@@ -448,9 +464,24 @@ class KeyxifViewModel(
             val updated = state.photos.filterNot { it.id == id }
             state.copy(
                 photos = updated,
+                selectedExportPhotoIds = state.selectedExportPhotoIds - id,
                 selectedPhotoId = state.selectedPhotoId
                     ?.takeIf { selected -> updated.any { it.id == selected } }
                     ?: updated.firstOrNull()?.id,
+            )
+        }
+    }
+
+    fun clearPhotos() {
+        _uiState.update { state ->
+            state.photos.forEach(::deleteLocalPhotoFile)
+            state.copy(
+                photos = emptyList(),
+                selectedPhotoId = null,
+                selectedExportPhotoIds = emptySet(),
+                currentStep = AppStep.Photos,
+                exportProgress = ExportProgress(),
+                uiMessage = "사진 목록을 비웠습니다.",
             )
         }
     }
@@ -472,6 +503,23 @@ class KeyxifViewModel(
         _uiState.update { state ->
             if (state.photos.any { it.id == id }) state.copy(selectedPhotoId = id) else state
         }
+    }
+
+    fun setExportPhotoSelected(id: String, selected: Boolean) {
+        _uiState.update { state ->
+            if (state.photos.none { it.id == id }) return@update state
+            state.copy(
+                selectedExportPhotoIds = if (selected) {
+                    state.selectedExportPhotoIds + id
+                } else {
+                    state.selectedExportPhotoIds - id
+                },
+            )
+        }
+    }
+
+    fun clearExportSelection() {
+        _uiState.update { it.copy(selectedExportPhotoIds = emptySet()) }
     }
 
     fun updateBuildInfo(buildInfo: KeyboardBuildInfo) {
@@ -538,6 +586,29 @@ class KeyxifViewModel(
         }
     }
 
+    fun removeRecentHousing(value: String) {
+        removeRecentValue { recentStore.removeHousing(value) }
+    }
+
+    fun removeRecentSwitch(value: String) {
+        removeRecentValue { recentStore.removeSwitch(value) }
+    }
+
+    fun removeRecentKeycap(value: String) {
+        removeRecentValue { recentStore.removeKeycap(value) }
+    }
+
+    fun removeRecentNickname(value: String) {
+        removeRecentValue { recentStore.removeNickname(value) }
+    }
+
+    private fun removeRecentValue(action: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            action()
+            refreshPersistentData()
+        }
+    }
+
     fun shareExportedImage(image: ExportedImage) {
         val uri = Uri.parse(image.uri)
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -576,17 +647,36 @@ class KeyxifViewModel(
     }
 
     fun deleteExportedImageFile(image: ExportedImage) {
+        deleteExportedImageFiles(listOf(image))
+    }
+
+    fun deleteExportedImageFiles(images: List<ExportedImage>) {
+        if (images.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val deleted = runCatching {
-                getApplication<Application>().contentResolver.delete(Uri.parse(image.uri), null, null) > 0
-            }.getOrDefault(false)
-            exportedImageRepository.remove(image.id)
+            var deleted = 0
+            images.forEach { image ->
+                val didDelete = runCatching {
+                    getApplication<Application>().contentResolver.delete(Uri.parse(image.uri), null, null) > 0
+                }.getOrDefault(false)
+                if (didDelete) deleted++
+                exportedImageRepository.remove(image.id)
+            }
             withContext(Dispatchers.Main) {
                 _uiState.update {
-                    it.copy(uiMessage = if (deleted) "이미지 파일을 삭제했습니다." else "파일 삭제 권한이 없어 목록에서만 제거했습니다.")
+                    it.copy(
+                        uiMessage = if (deleted == images.size) {
+                            "이미지 ${images.size}개를 삭제했습니다."
+                        } else {
+                            "이미지 ${images.size}개를 목록에서 제거했습니다. 일부 파일은 삭제 권한이 없었습니다."
+                        },
+                    )
                 }
             }
         }
+    }
+
+    fun deleteAllExportedImages() {
+        deleteExportedImageFiles(uiState.value.exportedImages)
     }
 
     fun pruneMissingExportedImages() {
@@ -650,8 +740,24 @@ class KeyxifViewModel(
         )
     }
 
+    suspend fun renderSourcePreviewBitmap(
+        photoId: String,
+        maxLongSide: Int = BitmapUtils.PREVIEW_LONG_SIDE_LIMIT,
+    ) = withContext(Dispatchers.IO) {
+        val photo = uiState.value.photos.firstOrNull { it.id == photoId } ?: return@withContext null
+        BitmapUtils.decodeOrientedBitmap(
+            context = getApplication(),
+            uri = photo.uri,
+            maxLongSide = maxLongSide,
+        )
+    }
+
     fun savePhoto(photoId: String) {
         enqueueExport(listOf(photoId))
+    }
+
+    fun savePhotos(photoIds: List<String>) {
+        enqueueExport(photoIds)
     }
 
     fun saveAll() {
@@ -1026,8 +1132,9 @@ class KeyxifViewModel(
                 val settings = uiState.value.settings
                 if (!settings.showPaletteColors) break
                 val mode = settings.paletteAnalysisMode
+                val centerCropRatio = settings.paletteCenterCropRatio
                 val target = uiState.value.photos.firstOrNull { photo ->
-                    photo.needsPaletteAnalysis(mode)
+                    photo.needsPaletteAnalysis(mode, centerCropRatio)
                 } ?: break
 
                 _uiState.update { state ->
@@ -1053,6 +1160,7 @@ class KeyxifViewModel(
                         uri = target.uri,
                         mode = mode,
                         maxColors = 5,
+                        centerCropRatio = centerCropRatio,
                     )
                 }
                 val analyzedAt = System.currentTimeMillis()
@@ -1069,6 +1177,7 @@ class KeyxifViewModel(
                                         errorMessage = result.exceptionOrNull()?.message
                                             ?: if (colors.isEmpty()) "대표 색상을 찾지 못했습니다." else null,
                                         analysisMode = mode,
+                                        analysisCenterCropRatio = centerCropRatio,
                                     ),
                                 )
                             } else {
@@ -1082,9 +1191,19 @@ class KeyxifViewModel(
         }
     }
 
-    private fun PhotoItem.needsPaletteAnalysis(mode: PaletteAnalysisMode): Boolean {
+    private fun PhotoItem.needsPaletteAnalysis(
+        mode: PaletteAnalysisMode,
+        centerCropRatio: Float,
+    ): Boolean {
         return !analysisResult.isAnalyzing &&
-            (analysisResult.analyzedAt <= 0L || analysisResult.analysisMode != mode)
+            (
+                analysisResult.analyzedAt <= 0L ||
+                    analysisResult.analysisMode != mode ||
+                    (
+                        mode == PaletteAnalysisMode.CenterCrop &&
+                            abs(analysisResult.analysisCenterCropRatio - centerCropRatio) > 0.001f
+                    )
+            )
     }
 
     private fun checkForUpdate(
@@ -1100,6 +1219,7 @@ class KeyxifViewModel(
                         updateCheckState = it.updateCheckState.copy(
                             isChecking = false,
                             lastCheckedAt = updateRepository.lastCheckedAt(),
+                            statusMessage = null,
                             errorMessage = "업데이트 JSON URL이 설정되지 않았습니다.",
                         ),
                         uiMessage = "업데이트 JSON URL이 설정되지 않았습니다.",
@@ -1116,6 +1236,7 @@ class KeyxifViewModel(
                 it.copy(
                     updateCheckState = it.updateCheckState.copy(
                         isChecking = true,
+                        statusMessage = null,
                         errorMessage = null,
                         lastCheckedAt = updateRepository.lastCheckedAt(),
                     ),
@@ -1134,6 +1255,11 @@ class KeyxifViewModel(
                                 isChecking = false,
                                 latestInfo = info,
                                 lastCheckedAt = checkedAt,
+                                statusMessage = if (requiresUpdate) {
+                                    "새 버전 ${info.latestVersionName} (${info.latestVersionCode})을 사용할 수 있습니다."
+                                } else {
+                                    "현재 최신 버전입니다. (${BuildConfig.VERSION_NAME})"
+                                },
                                 errorMessage = null,
                             ),
                             showUpdateDialog = requiresUpdate,
@@ -1148,9 +1274,10 @@ class KeyxifViewModel(
                             updateCheckState = state.updateCheckState.copy(
                                 isChecking = false,
                                 lastCheckedAt = checkedAt,
-                                errorMessage = message,
+                                statusMessage = null,
+                                errorMessage = "업데이트 확인 실패: $message",
                             ),
-                            uiMessage = if (manual) message else state.uiMessage,
+                            uiMessage = if (manual) "업데이트 확인에 실패했습니다." else state.uiMessage,
                         )
                     }
                 }

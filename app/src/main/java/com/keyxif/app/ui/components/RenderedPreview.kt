@@ -36,22 +36,14 @@ fun RenderedPreview(
     var preview by remember(photo.id, renderKey) {
         mutableStateOf(PreviewRenderState(isLoading = true))
     }
+
     LaunchedEffect(photo.id, renderKey) {
         preview = PreviewRenderState(isLoading = true)
-        preview = runCatching {
-            viewModel.renderPreviewBitmap(photo.id)
-        }.fold(
-            onSuccess = { bitmap ->
-                if (bitmap == null) {
-                    PreviewRenderState(errorMessage = "미리보기를 만들 수 없습니다.")
-                } else {
-                    PreviewRenderState(bitmap = bitmap)
-                }
-            },
-            onFailure = {
-                PreviewRenderState(errorMessage = "미리보기 렌더링 실패")
-            },
-        )
+        val rendered = runCatching {
+            viewModel.renderPreviewBitmap(photo.id, GRID_PREVIEW_LONG_SIDE)
+        }.getOrNull()
+        preview = rendered?.let { PreviewRenderState(bitmap = it) }
+            ?: PreviewRenderState(errorMessage = "템플릿 미리보기를 만들 수 없습니다.")
     }
 
     DisposableEffect(preview.bitmap) {
@@ -71,7 +63,7 @@ fun RenderedPreview(
                 Image(
                     bitmap = it.asImageBitmap(),
                     contentDescription = photo.displayName,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit,
                 )
             } ?: if (preview.isLoading) {
@@ -95,3 +87,5 @@ private data class PreviewRenderState(
     val bitmap: Bitmap? = null,
     val errorMessage: String? = null,
 )
+
+private const val GRID_PREVIEW_LONG_SIDE = 1280

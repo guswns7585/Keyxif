@@ -59,6 +59,7 @@ data class PhotoAnalysisResult(
     val isAnalyzing: Boolean = false,
     val errorMessage: String? = null,
     val analysisMode: PaletteAnalysisMode? = null,
+    val analysisCenterCropRatio: Float = DEFAULT_PALETTE_CENTER_CROP_RATIO,
 )
 
 data class PhotoItem(
@@ -135,6 +136,7 @@ data class UpdateCheckState(
     val isChecking: Boolean = false,
     val latestInfo: UpdateInfo? = null,
     val lastCheckedAt: Long? = null,
+    val statusMessage: String? = null,
     val errorMessage: String? = null,
 )
 
@@ -175,6 +177,7 @@ data class AppSettings(
     val showPaletteColors: Boolean = true,
     val paletteColorCount: Int = 4,
     val paletteAnalysisMode: PaletteAnalysisMode = PaletteAnalysisMode.CenterCrop,
+    val paletteCenterCropRatio: Float = DEFAULT_PALETTE_CENTER_CROP_RATIO,
     val autoSelectLogoContrastVariant: Boolean = true,
 )
 
@@ -209,6 +212,8 @@ enum class PaletteAnalysisMode {
     FullImage,
     CenterCrop,
 }
+
+const val DEFAULT_PALETTE_CENTER_CROP_RATIO = 0.75f
 
 enum class TemplateBackgroundTone {
     Light,

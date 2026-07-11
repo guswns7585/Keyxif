@@ -22,6 +22,14 @@ class RecentStore(context: Context) {
 
     fun addNickname(value: String, limit: Int = DEFAULT_MAX_RECENTS) = addRecent(KEY_NICKNAME, value, limit)
 
+    fun removeHousing(value: String) = removeRecent(KEY_HOUSING, value)
+
+    fun removeSwitch(value: String) = removeRecent(KEY_SWITCH, value)
+
+    fun removeKeycap(value: String) = removeRecent(KEY_KEYCAP, value)
+
+    fun removeNickname(value: String) = removeRecent(KEY_NICKNAME, value)
+
     fun addBuildInfo(
         info: com.keyxif.app.domain.model.KeyboardBuildInfo,
         limit: Int = DEFAULT_MAX_RECENTS,
@@ -37,6 +45,12 @@ class RecentStore(context: Context) {
         val updated = (listOf(trimmed) + readList(key))
             .distinctBy { it.lowercase() }
             .take(limit.coerceIn(10, 50))
+        preferences.edit().putString(key, updated.joinToString(SEPARATOR)).apply()
+    }
+
+    private fun removeRecent(key: String, value: String) {
+        val target = value.meaningfulBuildTextOrNull()?.lowercase() ?: return
+        val updated = readList(key).filterNot { it.lowercase() == target }
         preferences.edit().putString(key, updated.joinToString(SEPARATOR)).apply()
     }
 

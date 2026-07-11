@@ -77,6 +77,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
     fun runExport(request: ExportRequest) {
         when (request) {
             ExportRequest.All -> viewModel.saveAll()
+            is ExportRequest.Many -> viewModel.savePhotos(request.photoIds)
             is ExportRequest.One -> viewModel.savePhoto(request.photoId)
         }
     }
@@ -194,9 +195,12 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         }
                     },
                     onSaveSelected = {
-                        state.selectedPhoto?.id?.let { requestExport(ExportRequest.One(it)) }
+                        state.selectedExportPhotoIds
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { requestExport(ExportRequest.Many(it.toList())) }
                     },
                     onSaveAll = { requestExport(ExportRequest.All) },
+                    selectedExportCount = state.selectedExportPhotoIds.size,
                 )
             }
         },
@@ -213,6 +217,8 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                     updateCheckState = state.updateCheckState,
                     updateDownloadState = state.updateDownloadState,
                     exportedImageCount = state.exportedImages.size,
+                    selectedPageName = state.settingsPageName,
+                    onSelectedPageNameChange = viewModel::selectSettingsPage,
                     onSettingsChange = viewModel::updateSettings,
                     onCheckUpdate = viewModel::checkForUpdate,
                     onInstallDownloadedUpdate = viewModel::installDownloadedUpdate,
@@ -227,7 +233,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                     onShare = viewModel::shareExportedImage,
                     onOpen = viewModel::openExportedImage,
                     onRemoveRecord = viewModel::removeExportedImageRecord,
-                    onDeleteFile = viewModel::deleteExportedImageFile,
+                    onDeleteFiles = viewModel::deleteExportedImageFiles,
                 )
             } else {
                 when (state.currentStep) {
@@ -235,6 +241,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         state = state,
                         onPick = viewModel::addPhotos,
                         onRemove = viewModel::removePhoto,
+                        onClearAll = viewModel::clearPhotos,
                         onMove = viewModel::movePhoto,
                         onDismissMessage = viewModel::clearShareMessage,
                     )
@@ -258,6 +265,10 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         onSavePreset = viewModel::saveBuildPreset,
                         onApplyPreset = viewModel::applyBuildPreset,
                         onDeletePreset = viewModel::deleteBuildPreset,
+                        onDeleteRecentHousing = viewModel::removeRecentHousing,
+                        onDeleteRecentSwitch = viewModel::removeRecentSwitch,
+                        onDeleteRecentKeycap = viewModel::removeRecentKeycap,
+                        onDeleteRecentNickname = viewModel::removeRecentNickname,
                     )
 
                     AppStep.Template -> TemplateSelectScreen(
@@ -271,6 +282,8 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         state = state,
                         viewModel = viewModel,
                         onSaveOne = { requestExport(ExportRequest.One(it)) },
+                        onSelectionChange = viewModel::setExportPhotoSelected,
+                        onClearSelection = viewModel::clearExportSelection,
                     )
                 }
             }
@@ -404,6 +417,7 @@ private fun StepBottomActions(
     onNext: () -> Unit,
     onSaveSelected: () -> Unit,
     onSaveAll: () -> Unit,
+    selectedExportCount: Int,
 ) {
     Surface(
         tonalElevation = 3.dp,
@@ -439,7 +453,7 @@ private fun StepBottomActions(
                 if (state.currentStep == AppStep.Export) {
                     Button(
                         modifier = Modifier.weight(1f),
-                        enabled = state.selectedPhoto != null && !state.exportProgress.isSaving,
+                        enabled = selectedExportCount > 0 && !state.exportProgress.isSaving,
                         onClick = onSaveSelected,
                     ) {
                         Text("선택 저장")
@@ -606,5 +620,6 @@ private fun nextActionLabel(step: AppStep): String = when (step) {
 
 private sealed interface ExportRequest {
     data object All : ExportRequest
+    data class Many(val photoIds: List<String>) : ExportRequest
     data class One(val photoId: String) : ExportRequest
 }

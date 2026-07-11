@@ -151,6 +151,7 @@ class DraftSessionRepository(
         put("isAnalyzing", false)
         put("errorMessage", errorMessage)
         put("analysisMode", analysisMode?.name)
+        put("analysisCenterCropRatio", analysisCenterCropRatio)
     }
 
     private fun JSONObject.toAnalysisResult(): PhotoAnalysisResult {
@@ -162,6 +163,7 @@ class DraftSessionRepository(
             analysisMode = optNullableString("analysisMode")?.let {
                 enumValueOrDefault<PaletteAnalysisMode>(it, PaletteAnalysisMode.CenterCrop)
             },
+            analysisCenterCropRatio = optDouble("analysisCenterCropRatio", 0.75).toFloat(),
         )
     }
 
@@ -208,6 +210,7 @@ class DraftSessionRepository(
         put("showPaletteColors", showPaletteColors)
         put("paletteColorCount", paletteColorCount)
         put("paletteAnalysisMode", paletteAnalysisMode.name)
+        put("paletteCenterCropRatio", paletteCenterCropRatio)
         put("autoSelectLogoContrastVariant", autoSelectLogoContrastVariant)
     }
 
@@ -245,6 +248,7 @@ class DraftSessionRepository(
                 optString("paletteAnalysisMode"),
                 PaletteAnalysisMode.CenterCrop,
             ),
+            paletteCenterCropRatio = optDouble("paletteCenterCropRatio", 0.75).toFloat(),
             autoSelectLogoContrastVariant = optBoolean("autoSelectLogoContrastVariant", true),
         )
     }

@@ -91,6 +91,10 @@ fun BuildInfoScreen(
     onSavePreset: (String) -> Unit,
     onApplyPreset: (BuildPreset) -> Unit,
     onDeletePreset: (String) -> Unit,
+    onDeleteRecentHousing: (String) -> Unit,
+    onDeleteRecentSwitch: (String) -> Unit,
+    onDeleteRecentKeycap: (String) -> Unit,
+    onDeleteRecentNickname: (String) -> Unit,
 ) {
     val selectedPhoto = state.selectedPhoto
     val info = selectedPhoto?.buildInfo ?: KeyboardBuildInfo()
@@ -279,6 +283,7 @@ fun BuildInfoScreen(
                         choice.preset?.let(onHousingPreset)
                             ?: onBuildInfoChange(info.copy(housing = choice.title))
                     },
+                    onDeleteRecent = onDeleteRecentHousing,
                 )
                 RecentChips(
                     title = "최근 사용한 스위치",
@@ -295,6 +300,7 @@ fun BuildInfoScreen(
                         choice.preset?.let(onSwitchPreset)
                             ?: onBuildInfoChange(info.copy(switchName = choice.title))
                     },
+                    onDeleteRecent = onDeleteRecentSwitch,
                 )
                 RecentChips(
                     title = "최근 사용한 키캡",
@@ -311,6 +317,7 @@ fun BuildInfoScreen(
                         choice.preset?.let(onKeycapPreset)
                             ?: onBuildInfoChange(info.copy(keycap = choice.title))
                     },
+                    onDeleteRecent = onDeleteRecentKeycap,
                 )
             }
         }

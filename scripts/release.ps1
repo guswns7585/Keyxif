@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [int]$VersionCode,
 
-    [string]$OwnerRepo = "username/keyxif",
+    [string]$OwnerRepo = "guswns7585/keyxif",
     [string]$MinRequiredVersionCode = "1",
     [string]$Message = "Keyxif의 새 APK가 준비되었습니다.",
     [switch]$ForceUpdate

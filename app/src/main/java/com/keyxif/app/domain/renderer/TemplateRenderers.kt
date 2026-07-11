@@ -155,7 +155,7 @@ class BottomSpecBarRenderer : TemplateRenderer {
             .take(3)
         val labelPaint = regular(scaled(h * 0.0105f, settings), Color.argb(180, 255, 255, 255))
         val valuePaint = medium(scaled(h * 0.0165f, settings), Color.WHITE)
-        val detailPaint = regular(scaled(h * 0.012f, settings, settings.nicknameEmphasis), Color.argb(220, 255, 255, 255)).apply {
+        val detailPaint = regular(scaled(h * 0.0138f, settings, settings.nicknameEmphasis), Color.argb(220, 255, 255, 255)).apply {
             textAlign = Paint.Align.RIGHT
         }
 
@@ -173,7 +173,7 @@ class BottomSpecBarRenderer : TemplateRenderer {
             separator = " / ",
         )
         if (detail.isNotBlank()) {
-            canvas.drawText(TextDrawUtils.ellipsize(detail, detailPaint, w * 0.5f), w - pad, top + h * BAR_RATIO * 0.9f, detailPaint)
+            canvas.drawText(TextDrawUtils.ellipsize(detail, detailPaint, w * 0.56f), w - pad, top + h * BAR_RATIO * 0.9f, detailPaint)
         }
         CanvasRenderUtils.drawPaletteChipsInRect(
             canvas = canvas,
@@ -205,12 +205,13 @@ class CornerMarkRenderer : TemplateRenderer {
         val pad = min(w, h) * 0.025f
         val titlePaint = medium(scaled(h * 0.017f, settings), Color.WHITE)
         val subPaint = regular(scaled(h * 0.011f, settings, settings.nicknameEmphasis), Color.argb(220, 255, 255, 255))
-        val maxCardWidth = w * 0.42f
-        val minCardWidth = if (title == null && subtitle.isBlank()) w * 0.08f else w * 0.17f
-        val minCardHeight = h * 0.052f
-        val maxCardHeight = h * 0.115f
-        val horizontalPadding = min(w, h) * 0.014f
-        val verticalPadding = min(w, h) * 0.010f
+        val cardScale = 1.15f
+        val maxCardWidth = w * 0.48f
+        val minCardWidth = if (title == null && subtitle.isBlank()) w * 0.092f else w * 0.195f
+        val minCardHeight = h * 0.060f
+        val maxCardHeight = h * 0.132f
+        val horizontalPadding = min(w, h) * 0.014f * cardScale
+        val verticalPadding = min(w, h) * 0.010f * cardScale
         val gap = min(w, h) * 0.012f
         val maxLogoWidth = maxCardWidth * 0.34f
         val maxLogoHeight = h * 0.046f
@@ -349,7 +350,7 @@ class DarkGlassStripRenderer : TemplateRenderer {
         val logoBox = RectF(pad, strip.top + stripHeight * 0.22f, pad + logoWidth, strip.bottom - stripHeight * 0.22f)
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, Color.WHITE, LogoAnchor.Start)
         val startX = (logoActual?.right ?: strip.left) + pad
-        val rowRight = if (colors.isNotEmpty() && rows.size <= 2) w * 0.68f else w - pad
+        val rowRight = if (colors.isNotEmpty()) w * 0.68f else w - pad
         val labelPaint = regular(scaled(h * 0.0105f, settings), Color.argb(180, 255, 255, 255))
         val valuePaint = medium(scaled(h * 0.0168f, settings), Color.WHITE)
         if (rows.isNotEmpty()) {
@@ -367,7 +368,7 @@ class DarkGlassStripRenderer : TemplateRenderer {
             gap = stripHeight * 0.05f,
             strokeColor = Color.argb(88, 255, 255, 255),
             alignment = PaletteChipAlignment.End,
-            maxChips = if (rows.size >= 3) 0 else settings.paletteColorCount,
+            maxChips = if (rows.size >= 3) 3 else settings.paletteColorCount,
         )
     }
 }
@@ -632,8 +633,9 @@ class CleanSignatureRenderer : TemplateRenderer {
         val titlePaint = medium(scaled(h * 0.026f, settings), Color.rgb(20, 21, 20))
         val bodyPaint = regular(scaled(h * 0.0145f, settings), Color.rgb(82, 84, 80))
         val nickPaint = medium(scaled(h * 0.019f, settings, settings.nicknameEmphasis), Color.rgb(36, 37, 35))
-        val textRight = (logoActual?.left?.minus(pad)) ?: (w - pad)
-        val baselines = listOf(footerTop + h * 0.052f, footerTop + h * 0.083f, footerTop + h * 0.122f)
+        val textRight = (logoActual?.left?.minus(pad))
+            ?: if (colors.isNotEmpty()) logoBox.left - pad else w - pad
+        val baselines = listOf(footerTop + h * 0.052f, footerTop + h * 0.083f, footerTop + h * 0.112f)
         lines.take(3).forEachIndexed { index, value ->
             val paint = when (index) {
                 0 -> titlePaint
@@ -645,11 +647,16 @@ class CleanSignatureRenderer : TemplateRenderer {
         CanvasRenderUtils.drawPaletteChipsInRect(
             canvas = canvas,
             colors = colors,
-            area = RectF(pad, footerTop + h * 0.120f, textRight, footerTop + h * 0.152f),
+            area = RectF(
+                logoBox.left,
+                (logoActual?.bottom ?: logoBox.bottom) + h * 0.010f,
+                logoBox.right,
+                footerTop + h * 0.148f,
+            ),
             chipSize = h * 0.014f,
             gap = h * 0.006f,
             strokeColor = Color.argb(70, 0, 0, 0),
-            alignment = PaletteChipAlignment.Start,
+            alignment = PaletteChipAlignment.Center,
             maxChips = if (lines.size >= 3) 3 else settings.paletteColorCount,
         )
     }

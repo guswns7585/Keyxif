@@ -1,5 +1,7 @@
 package com.keyxif.app.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,12 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -30,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,11 +60,17 @@ fun ExportedGalleryScreen(
     onShare: (ExportedImage) -> Unit,
     onOpen: (ExportedImage) -> Unit,
     onRemoveRecord: (String) -> Unit,
-    onDeleteFile: (ExportedImage) -> Unit,
+    onDeleteFiles: (List<ExportedImage>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedImage by remember { mutableStateOf<ExportedImage?>(null) }
-    var imagePendingDelete by remember { mutableStateOf<ExportedImage?>(null) }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var pendingDeleteImages by remember { mutableStateOf<List<ExportedImage>?>(null) }
+
+    LaunchedEffect(images) {
+        val validIds = images.map { it.id }.toSet()
+        selectedIds = selectedIds.filter { it in validIds }.toSet()
+    }
 
     selectedImage?.let { image ->
         ExportedImageDetailDialog(
@@ -73,16 +84,24 @@ fun ExportedGalleryScreen(
             },
             onDeleteFile = {
                 selectedImage = null
-                imagePendingDelete = image
+                pendingDeleteImages = listOf(image)
             },
         )
     }
 
-    imagePendingDelete?.let { image ->
+    pendingDeleteImages?.let { deleteTargets ->
         AlertDialog(
-            onDismissRequest = { imagePendingDelete = null },
-            title = { Text("파일도 삭제할까요?") },
-            text = { Text("\"${image.fileName}\" 파일을 기기에서도 삭제합니다. 이 작업은 되돌릴 수 없습니다.") },
+            onDismissRequest = { pendingDeleteImages = null },
+            title = { Text("이미지를 삭제할까요?") },
+            text = {
+                Text(
+                    if (deleteTargets.size == 1) {
+                        "\"${deleteTargets.first().fileName}\" 파일을 기기에서 삭제하고 갤러리 목록에서도 제거합니다."
+                    } else {
+                        "선택한 이미지 ${deleteTargets.size}개를 기기에서 삭제하고 갤러리 목록에서도 제거합니다."
+                    },
+                )
+            },
             confirmButton = {
                 Button(
                     colors = ButtonDefaults.buttonColors(
@@ -90,15 +109,16 @@ fun ExportedGalleryScreen(
                         contentColor = MaterialTheme.colorScheme.onError,
                     ),
                     onClick = {
-                        onDeleteFile(image)
-                        imagePendingDelete = null
+                        onDeleteFiles(deleteTargets)
+                        selectedIds = selectedIds - deleteTargets.map { it.id }.toSet()
+                        pendingDeleteImages = null
                     },
                 ) {
-                    Text("파일도 삭제")
+                    Text("삭제")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { imagePendingDelete = null }) {
+                TextButton(onClick = { pendingDeleteImages = null }) {
                     Text("취소")
                 }
             },
@@ -111,7 +131,7 @@ fun ExportedGalleryScreen(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = "완성 이미지",
                 style = MaterialTheme.typography.titleLarge,
@@ -122,6 +142,30 @@ fun ExportedGalleryScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (images.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selectedIds.isNotEmpty()) {
+                        Button(
+                            onClick = { pendingDeleteImages = images.filter { it.id in selectedIds } },
+                        ) {
+                            Text("선택 삭제 ${selectedIds.size}")
+                        }
+                        TextButton(onClick = { selectedIds = emptySet() }) {
+                            Text("선택 해제")
+                        }
+                    }
+                    OutlinedButton(
+                        modifier = if (selectedIds.isEmpty()) Modifier else Modifier.weight(1f),
+                        onClick = { pendingDeleteImages = images },
+                    ) {
+                        Text("전체 삭제")
+                    }
+                }
+            }
         }
 
         if (images.isEmpty()) {
@@ -134,9 +178,21 @@ fun ExportedGalleryScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(images, key = { it.id }, contentType = { "exported_image" }) { image ->
+                    val selected = image.id in selectedIds
                     ExportedImageGridItem(
                         image = image,
-                        onClick = { selectedImage = image },
+                        selected = selected,
+                        selectionMode = selectedIds.isNotEmpty(),
+                        onClick = {
+                            if (selectedIds.isEmpty()) {
+                                selectedImage = image
+                            } else {
+                                selectedIds = if (selected) selectedIds - image.id else selectedIds + image.id
+                            }
+                        },
+                        onLongClick = {
+                            selectedIds = selectedIds + image.id
+                        },
                     )
                 }
             }
@@ -160,7 +216,7 @@ private fun EmptyExportedGalleryState(onBackToCreate: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "사진을 선택하고 Keyxif 카드로 변환해보세요.",
+                text = "사진을 선택하고 Keyxif 카드로 저장해보세요.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -171,22 +227,57 @@ private fun EmptyExportedGalleryState(onBackToCreate: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExportedImageGridItem(
     image: ExportedImage,
+    selected: Boolean,
+    selectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
-    Card(onClick = onClick) {
+    Card(
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick,
+        ),
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            AsyncImage(
-                model = image.uri,
-                contentDescription = image.fileName,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
-                contentScale = ContentScale.Crop,
-            )
+            Box {
+                AsyncImage(
+                    model = image.uri,
+                    contentDescription = image.fileName,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+                if (selectionMode) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .size(26.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
+                        },
+                    ) {
+                        if (selected) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "선택됨",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Column(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -250,7 +341,7 @@ private fun ExportedImageDetailDialog(
                     IconButton(onClick = onDeleteFile) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "파일도 삭제",
+                            contentDescription = "파일 삭제",
                             tint = MaterialTheme.colorScheme.error,
                         )
                     }

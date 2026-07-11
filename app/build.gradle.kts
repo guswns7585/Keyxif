@@ -13,11 +13,11 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
         buildConfigField(
             "String",
             "UPDATE_JSON_URL",
-            "\"https://raw.githubusercontent.com/username/keyxif/main/docs/update.json\"",
+            "\"https://raw.githubusercontent.com/guswns7585/keyxif/main/docs/update.json\"",
         )
 
         vectorDrawables {

@@ -8,7 +8,7 @@ fi
 
 VERSION_NAME="$1"
 VERSION_CODE="$2"
-OWNER_REPO="${3:-username/keyxif}"
+OWNER_REPO="${3:-guswns7585/keyxif}"
 TAG="v${VERSION_NAME}"
 APK_NAME="keyxif-${VERSION_NAME}.apk"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

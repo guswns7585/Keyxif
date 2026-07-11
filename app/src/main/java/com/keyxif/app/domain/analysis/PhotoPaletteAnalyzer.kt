@@ -16,6 +16,7 @@ class PhotoPaletteAnalyzer {
         uri: Uri,
         mode: PaletteAnalysisMode,
         maxColors: Int = MAX_COLORS,
+        centerCropRatio: Float = DEFAULT_CENTER_CROP_RATIO,
     ): List<Int> {
         val decoded = BitmapUtils.decodeOrientedBitmap(context, uri, ANALYSIS_LONG_SIDE)
         var cropped: Bitmap? = null
@@ -23,7 +24,7 @@ class PhotoPaletteAnalyzer {
         return try {
             val source = when (mode) {
                 PaletteAnalysisMode.FullImage -> decoded
-                PaletteAnalysisMode.CenterCrop -> centerCrop(decoded).also { cropped = it }
+                PaletteAnalysisMode.CenterCrop -> centerCrop(decoded, centerCropRatio).also { cropped = it }
             }
             val analysisBitmap = downscaleForAnalysis(source).also {
                 if (it !== source) scaled = it
@@ -36,9 +37,13 @@ class PhotoPaletteAnalyzer {
         }
     }
 
-    private fun centerCrop(bitmap: Bitmap): Bitmap {
-        val cropWidth = (bitmap.width * CENTER_CROP_RATIO).roundToInt().coerceIn(1, bitmap.width)
-        val cropHeight = (bitmap.height * CENTER_CROP_RATIO).roundToInt().coerceIn(1, bitmap.height)
+    private fun centerCrop(
+        bitmap: Bitmap,
+        ratio: Float,
+    ): Bitmap {
+        val safeRatio = ratio.coerceIn(0.35f, 1f)
+        val cropWidth = (bitmap.width * safeRatio).roundToInt().coerceIn(1, bitmap.width)
+        val cropHeight = (bitmap.height * safeRatio).roundToInt().coerceIn(1, bitmap.height)
         val left = ((bitmap.width - cropWidth) / 2).coerceAtLeast(0)
         val top = ((bitmap.height - cropHeight) / 2).coerceAtLeast(0)
         return Bitmap.createBitmap(bitmap, left, top, cropWidth, cropHeight)
@@ -173,7 +178,7 @@ class PhotoPaletteAnalyzer {
     private companion object {
         const val ANALYSIS_LONG_SIDE = 256
         const val TARGET_LONG_SIDE = 160
-        const val CENTER_CROP_RATIO = 0.75f
+        const val DEFAULT_CENTER_CROP_RATIO = 0.75f
         const val MAX_SAMPLES = 12_000
         const val MAX_COLORS = 5
         const val MIN_ALPHA = 220

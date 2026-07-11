@@ -9,10 +9,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -39,9 +43,11 @@ fun <T> PresetSearchField(
     onValueChange: (String) -> Unit,
     onOptionSelected: (PresetChoice<T>) -> Unit,
     modifier: Modifier = Modifier,
+    onDeleteRecent: ((String) -> Unit)? = null,
 ) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable(value) { mutableStateOf(value) }
+    var hiddenRecentTitles by rememberSaveable(label) { mutableStateOf(emptySet<String>()) }
 
     Column(
         modifier = modifier,
@@ -70,6 +76,8 @@ fun <T> PresetSearchField(
 
     if (showPicker) {
         val pickerOptions = options(query)
+            .filterNot { it.isRecent && it.title in hiddenRecentTitles }
+
         ModalBottomSheet(onDismissRequest = { showPicker = false }) {
             Column(
                 modifier = Modifier
@@ -107,47 +115,59 @@ fun <T> PresetSearchField(
                     )
                 } else {
                     Text(
-                        text = "최근 사용 / 앱 내장 목록",
+                        text = "최근 사용 / 내장 목록",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-            ) {
-                items(
-                    pickerOptions,
-                    key = { "${it.title}-${it.subtitle}-${it.isRecent}" },
-                    contentType = { "preset_choice" },
-                ) { option ->
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                text = option.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontWeight = if (option.isRecent) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                        },
-                        supportingContent = option.subtitle?.let { subtitle ->
-                            { Text(text = subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        },
-                        trailingContent = {
-                            TextButton(
-                                onClick = {
-                                    onOptionSelected(option)
-                                    showPicker = false
-                                },
-                            ) {
-                                Text(if (option.preset == null) "사용" else "선택")
-                            }
-                        },
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                ) {
+                    items(
+                        pickerOptions,
+                        key = { "${it.title}-${it.subtitle}-${it.isRecent}" },
+                        contentType = { "preset_choice" },
+                    ) { option ->
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = option.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = if (option.isRecent) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                            },
+                            supportingContent = option.subtitle?.let { subtitle ->
+                                { Text(text = subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            },
+                            trailingContent = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    if (option.isRecent && onDeleteRecent != null) {
+                                        IconButton(
+                                            onClick = {
+                                                hiddenRecentTitles = hiddenRecentTitles + option.title
+                                                onDeleteRecent(option.title)
+                                            },
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "최근 항목 삭제")
+                                        }
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            onOptionSelected(option)
+                                            showPicker = false
+                                        },
+                                    ) {
+                                        Text(if (option.preset == null) "사용" else "선택")
+                                    }
+                                }
+                            },
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    }
                 }
-            }
             }
         }
     }

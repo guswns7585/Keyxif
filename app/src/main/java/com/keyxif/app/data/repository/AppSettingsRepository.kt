@@ -67,6 +67,7 @@ class AppSettingsRepository(
             preferences[Keys.SHOW_PALETTE_COLORS] = next.showPaletteColors
             preferences[Keys.PALETTE_COLOR_COUNT] = next.paletteColorCount
             preferences[Keys.PALETTE_ANALYSIS_MODE] = next.paletteAnalysisMode.name
+            preferences[Keys.PALETTE_CENTER_CROP_RATIO] = next.paletteCenterCropRatio
             preferences[Keys.AUTO_SELECT_LOGO_CONTRAST_VARIANT] = next.autoSelectLogoContrastVariant
         }
     }
@@ -105,6 +106,7 @@ class AppSettingsRepository(
                 preferences[Keys.PALETTE_ANALYSIS_MODE],
                 PaletteAnalysisMode.CenterCrop,
             ),
+            paletteCenterCropRatio = preferences[Keys.PALETTE_CENTER_CROP_RATIO] ?: 0.75f,
             autoSelectLogoContrastVariant = preferences[Keys.AUTO_SELECT_LOGO_CONTRAST_VARIANT] ?: true,
         ).normalized()
     }
@@ -128,6 +130,7 @@ class AppSettingsRepository(
             nicknameEmphasis = nicknameEmphasis.coerceIn(0.9f, 1.35f),
             updateJsonUrl = updateJsonUrl.trim(),
             paletteColorCount = paletteColorCount.coerceIn(3, 5),
+            paletteCenterCropRatio = paletteCenterCropRatio.coerceIn(0.35f, 1.0f),
         )
     }
 
@@ -161,6 +164,7 @@ class AppSettingsRepository(
         val SHOW_PALETTE_COLORS = booleanPreferencesKey("show_palette_colors")
         val PALETTE_COLOR_COUNT = intPreferencesKey("palette_color_count")
         val PALETTE_ANALYSIS_MODE = stringPreferencesKey("palette_analysis_mode")
+        val PALETTE_CENTER_CROP_RATIO = floatPreferencesKey("palette_center_crop_ratio")
         val AUTO_SELECT_LOGO_CONTRAST_VARIANT = booleanPreferencesKey("auto_select_logo_contrast_variant")
     }
 
