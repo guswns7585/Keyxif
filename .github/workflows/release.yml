@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
- workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -34,9 +34,20 @@ jobs:
             echo "KEYSTORE_BASE64 secret is missing." >&2
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keyxif-release.jks"
+
+          echo "$KEYSTORE_BASE64" \
+            | tr -d '\r\n ' \
+            | base64 --decode \
+            > "$RUNNER_TEMP/keyxif-release.jks"
+
+          if [ ! -s "$RUNNER_TEMP/keyxif-release.jks" ]; then
+            echo "Decoded keystore is empty." >&2
+            exit 1
+          fi
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+
       - name: Build signed release APK
         env:
           CI: "true"
@@ -44,7 +55,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease
+        run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Read version
         id: version
@@ -52,16 +63,36 @@ jobs:
         run: |
           VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -n 1)
           VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -n 1)
+
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "Could not read app version." >&2
+            exit 1
+          fi
+
+          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo "Release APK was not generated." >&2
+            exit 1
+          fi
+
           TAG_NAME="${GITHUB_REF_NAME}"
           APK_NAME="keyxif-${VERSION_NAME}.apk"
+
           cp app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
           echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Upload verification APK
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyxif-release-verification
+          path: ${{ steps.version.outputs.apk_name }}
+
       - name: Create GitHub Release
-	if: github.event_name == 'push'
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
@@ -70,7 +101,7 @@ jobs:
           files: ${{ steps.version.outputs.apk_name }}
 
       - name: Generate update.json
- 	if: github.event_name == 'push'
+        if: github.event_name == 'push'
         shell: bash
         run: |
           OWNER_REPO="${GITHUB_REPOSITORY}"
@@ -78,7 +109,9 @@ jobs:
           VERSION_CODE="${{ steps.version.outputs.version_code }}"
           TAG_NAME="${{ steps.version.outputs.tag_name }}"
           APK_NAME="${{ steps.version.outputs.apk_name }}"
+
           mkdir -p docs
+
           cat > docs/update.json <<EOF
           {
             "latestVersionCode": ${VERSION_CODE},
@@ -93,12 +126,13 @@ jobs:
           EOF
 
       - name: Commit update.json
- 	if: github.event_name == 'push'
+        if: github.event_name == 'push'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/update.json
+
           if git diff --cached --quiet; then
             echo "docs/update.json is already up to date."
           else
