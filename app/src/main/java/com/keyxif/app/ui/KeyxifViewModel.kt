@@ -67,6 +67,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
@@ -75,6 +77,7 @@ data class KeyxifUiState(
     val photos: List<PhotoItem> = emptyList(),
     val selectedPhotoId: String? = null,
     val selectedExportPhotoIds: Set<String> = emptySet(),
+    val expandedExportPhotoId: String? = null,
     val selectedTemplate: CardTemplate = CardTemplate.ClassicFrame,
     val settings: AppSettings = AppSettings(),
     val isSettingsOpen: Boolean = false,
@@ -114,6 +117,7 @@ class KeyxifViewModel(
     private val workManager = WorkManager.getInstance(application)
     private val renderer = KeyxifCanvasRenderer(presetRepository)
     private val paletteAnalyzer = PhotoPaletteAnalyzer()
+    private val previewRenderSemaphore = Semaphore(2)
     private var appliedInitialSettings = false
     private var pendingDraftSession: DraftSession? = null
     private var autoSaveReady = false
@@ -465,6 +469,7 @@ class KeyxifViewModel(
             state.copy(
                 photos = updated,
                 selectedExportPhotoIds = state.selectedExportPhotoIds - id,
+                expandedExportPhotoId = state.expandedExportPhotoId?.takeIf { it != id },
                 selectedPhotoId = state.selectedPhotoId
                     ?.takeIf { selected -> updated.any { it.id == selected } }
                     ?: updated.firstOrNull()?.id,
@@ -479,6 +484,7 @@ class KeyxifViewModel(
                 photos = emptyList(),
                 selectedPhotoId = null,
                 selectedExportPhotoIds = emptySet(),
+                expandedExportPhotoId = null,
                 currentStep = AppStep.Photos,
                 exportProgress = ExportProgress(),
                 uiMessage = "사진 목록을 비웠습니다.",
@@ -520,6 +526,13 @@ class KeyxifViewModel(
 
     fun clearExportSelection() {
         _uiState.update { it.copy(selectedExportPhotoIds = emptySet()) }
+    }
+
+    fun setExpandedExportPhoto(photoId: String?) {
+        _uiState.update { state ->
+            if (photoId != null && state.photos.none { it.id == photoId }) return@update state
+            state.copy(expandedExportPhotoId = photoId)
+        }
     }
 
     fun updateBuildInfo(buildInfo: KeyboardBuildInfo) {
@@ -731,13 +744,17 @@ class KeyxifViewModel(
     ) = withContext(Dispatchers.IO) {
         val state = uiState.value
         val photo = state.photos.firstOrNull { it.id == photoId } ?: return@withContext null
-        renderer.render(
-            context = getApplication(),
-            photo = photo,
-            template = state.selectedTemplate,
-            settings = state.settings,
-            maxLongSide = maxLongSide,
-        )
+        // 그리드에서 여러 셀이 한 번에 렌더링을 요청하면 대형 비트맵이 동시에 올라와
+        // 메모리 부족으로 실패하기 쉬우므로 동시 렌더링 수를 제한한다.
+        previewRenderSemaphore.withPermit {
+            renderer.render(
+                context = getApplication(),
+                photo = photo,
+                template = state.selectedTemplate,
+                settings = state.settings,
+                maxLongSide = maxLongSide,
+            )
+        }
     }
 
     suspend fun renderSourcePreviewBitmap(

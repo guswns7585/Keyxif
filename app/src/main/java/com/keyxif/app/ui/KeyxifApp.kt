@@ -6,12 +6,13 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,9 +44,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -169,7 +173,21 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
         )
     }
 
+    // 저장 단계 전체화면 미리보기가 떠 있는 동안 앱 콘텐츠 전체를 블러 처리한다.
+    // 창 단위 블러(FLAG_BLUR_BEHIND)는 기기 지원 여부에 따라 무시되는 경우가 많아
+    // 앱 내부 RenderEffect 블러를 사용한다. (Android 11 이하에서는 스크림만 적용)
+    val previewDialogOpen = !state.isSettingsOpen &&
+        !state.isGalleryOpen &&
+        state.currentStep == AppStep.Export &&
+        state.expandedExportPhotoId != null &&
+        state.settings.enableExportPreviewZoom
+    val backgroundBlurRadius by animateDpAsState(
+        targetValue = if (previewDialogOpen) 20.dp else 0.dp,
+        label = "previewBackgroundBlur",
+    )
+
     Scaffold(
+        modifier = if (backgroundBlurRadius > 0.dp) Modifier.blur(backgroundBlurRadius) else Modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             KeyxifTopBar(
@@ -327,20 +345,38 @@ private fun KeyxifTopBar(
                     )
                 }
             } else {
-                Text(
-                    text = "Keyxif",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "사진 ${state.photos.size}장",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "Keyxif",
+                        style = MaterialTheme.typography.headlineSmall,
                     )
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.secondary),
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.photos.isNotEmpty()) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Text(
+                                text = "사진 ${state.photos.size}장",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     IconButton(onClick = onGallery) {
                         Icon(Icons.Default.PhotoLibrary, contentDescription = "완성 이미지")
                     }
@@ -364,47 +400,77 @@ private fun KeyxifStepIndicator(
     currentStep: AppStep,
     onStepClick: (AppStep) -> Unit,
 ) {
-    Row(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        AppStep.entries.forEach { step ->
-            val selected = step == currentStep
-            val completed = step.ordinal < currentStep.ordinal
-            val color = when {
-                selected -> MaterialTheme.colorScheme.primary
-                completed -> MaterialTheme.colorScheme.secondary
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-            val textColor = when {
-                selected -> MaterialTheme.colorScheme.primary
-                completed -> MaterialTheme.colorScheme.onSurface
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(MaterialTheme.shapes.small)
-                    .clickable { onStepClick(step) }
-                    .padding(vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(CircleShape)
-                        .background(color),
-                )
-                Text(
-                    text = step.displayName(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    color = textColor,
-                    maxLines = 1,
-                )
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppStep.entries.forEach { step ->
+                val selected = step == currentStep
+                val completed = step.ordinal < currentStep.ordinal
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    shadowElevation = if (selected) 1.dp else 0.dp,
+                    onClick = { onStepClick(step) },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        selected -> MaterialTheme.colorScheme.primary
+                                        completed -> MaterialTheme.colorScheme.secondaryContainer
+                                        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (completed) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            } else {
+                                Text(
+                                    text = "${step.ordinal + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+                        Text(
+                            text = step.displayName(),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
     }
@@ -420,8 +486,7 @@ private fun StepBottomActions(
     selectedExportCount: Int,
 ) {
     Surface(
-        tonalElevation = 3.dp,
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
             modifier = Modifier
@@ -429,20 +494,20 @@ private fun StepBottomActions(
                 .imePadding()
                 .navigationBarsPadding(),
         ) {
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val previous = previousStep(state.currentStep)
-                if (previous == null) {
-                    Spacer(modifier = Modifier.weight(1f))
-                } else {
+                if (previous != null) {
                     OutlinedButton(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
                         enabled = !state.exportProgress.isSaving,
                         onClick = onPrevious,
                     ) {
@@ -452,14 +517,18 @@ private fun StepBottomActions(
 
                 if (state.currentStep == AppStep.Export) {
                     Button(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
                         enabled = selectedExportCount > 0 && !state.exportProgress.isSaving,
                         onClick = onSaveSelected,
                     ) {
-                        Text("선택 저장")
+                        Text(if (selectedExportCount > 0) "선택 저장 $selectedExportCount" else "선택 저장")
                     }
                     Button(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
                         enabled = state.photos.isNotEmpty() && !state.exportProgress.isSaving,
                         onClick = onSaveAll,
                     ) {
@@ -467,7 +536,9 @@ private fun StepBottomActions(
                     }
                 } else {
                     Button(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(if (previous == null) 1f else 2f)
+                            .height(50.dp),
                         enabled = !state.exportProgress.isSaving,
                         onClick = onNext,
                     ) {
@@ -612,9 +683,9 @@ private fun previousStep(step: AppStep): AppStep? = when (step) {
 }
 
 private fun nextActionLabel(step: AppStep): String = when (step) {
-    AppStep.Photos -> "정보"
-    AppStep.BuildInfo -> "템플릿"
-    AppStep.Template -> "저장"
+    AppStep.Photos -> "빌드 정보 입력"
+    AppStep.BuildInfo -> "템플릿 선택"
+    AppStep.Template -> "미리보기 · 저장"
     AppStep.Export -> "저장"
 }
 

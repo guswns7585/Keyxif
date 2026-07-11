@@ -11,7 +11,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.keyxif.app.domain.model.CardTemplate
 import com.keyxif.app.domain.model.KeyboardBuildInfo
@@ -28,14 +27,13 @@ fun TemplateSelectScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(18.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = "템플릿",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
             )
             Text(
                 text = listOfNotNull(

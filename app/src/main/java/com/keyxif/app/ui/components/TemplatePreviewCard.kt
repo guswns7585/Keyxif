@@ -1,5 +1,6 @@
 package com.keyxif.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,12 +11,19 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,12 +45,17 @@ fun TemplatePreviewCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val outline = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Surface(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
-        tonalElevation = if (selected) 3.dp else 0.dp,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
+        border = if (selected) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        },
+        tonalElevation = if (selected) 2.dp else 0.dp,
+        shadowElevation = if (selected) 2.dp else 0.dp,
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
@@ -52,7 +65,8 @@ fun TemplatePreviewCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1.25f)
-                    .background(Color(0xFFE6E8E6), RoundedCornerShape(6.dp)),
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFFE6E8E6)),
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
@@ -175,13 +189,25 @@ fun TemplatePreviewCard(
                     if (template in palettePreviewTemplates) {
                         drawPreviewPaletteChips(template, w, h)
                     }
-                    drawRoundRect(
-                        color = outline,
-                        topLeft = Offset(1.5f, 1.5f),
-                        size = Size(w - 3f, h - 3f),
-                        cornerRadius = CornerRadius(8f, 8f),
-                        style = Stroke(width = if (selected) 4f else 1.5f),
-                    )
+                }
+                if (selected) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(22.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = "선택된 템플릿",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+                    }
                 }
             }
             Text(

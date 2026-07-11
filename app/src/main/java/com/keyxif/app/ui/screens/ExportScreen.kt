@@ -2,7 +2,6 @@ package com.keyxif.app.ui.screens
 
 import android.graphics.Bitmap
 import android.graphics.drawable.ColorDrawable
-import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -25,17 +25,19 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +68,7 @@ import com.keyxif.app.domain.model.RenderStatus
 import com.keyxif.app.ui.KeyxifUiState
 import com.keyxif.app.ui.KeyxifViewModel
 import com.keyxif.app.ui.components.RenderedPreview
+import com.keyxif.app.ui.components.renderOrNull
 import kotlin.math.max
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -77,17 +80,16 @@ fun ExportScreen(
     onSelectionChange: (String, Boolean) -> Unit,
     onClearSelection: () -> Unit,
 ) {
-    var expandedPhotoId by remember { mutableStateOf<String?>(null) }
     val selectionMode = state.selectedExportPhotoIds.isNotEmpty()
 
-    expandedPhotoId?.let { photoId ->
+    state.expandedExportPhotoId?.let { photoId ->
         if (state.settings.enableExportPreviewZoom) {
             FullscreenPreviewDialog(
                 photos = state.photos,
                 initialPhotoId = photoId,
                 state = state,
                 viewModel = viewModel,
-                onDismiss = { expandedPhotoId = null },
+                onDismiss = { viewModel.setExpandedExportPhoto(null) },
             )
         }
     }
@@ -95,14 +97,13 @@ fun ExportScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(18.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = "미리보기",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "WEBP 품질 ${state.settings.webpQuality}% · Pictures/${state.settings.saveDirectoryName}",
@@ -132,102 +133,147 @@ fun ExportScreen(
         }
 
         if (selectionMode) {
-            Row(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.secondaryContainer,
             ) {
-                Text(
-                    text = "선택된 사진 ${state.selectedExportPhotoIds.size}장",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(
-                    enabled = !state.exportProgress.isSaving,
-                    onClick = onClearSelection,
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("선택 해제")
+                    Text(
+                        text = "${state.selectedExportPhotoIds.size}장 선택됨",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    TextButton(
+                        enabled = !state.exportProgress.isSaving,
+                        onClick = onClearSelection,
+                    ) {
+                        Text("선택 해제")
+                    }
                 }
             }
         }
 
         LazyVerticalGrid(
             modifier = Modifier.weight(1f),
-            columns = GridCells.Adaptive(180.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            columns = GridCells.Adaptive(150.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(state.photos, key = { it.id }) { photo ->
                 val selectedForExport = photo.id in state.selectedExportPhotoIds
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box {
-                        RenderedPreview(
-                            photo = photo,
-                            viewModel = viewModel,
-                            renderKey = previewRenderKey("grid", state, photo),
-                            modifier = Modifier.combinedClickable(
-                                enabled = !state.exportProgress.isSaving,
-                                onClick = {
-                                    if (selectionMode) {
-                                        onSelectionChange(photo.id, !selectedForExport)
-                                    } else if (state.settings.enableExportPreviewZoom) {
-                                        expandedPhotoId = photo.id
-                                    }
-                                },
-                                onLongClick = {
-                                    onSelectionChange(photo.id, true)
-                                },
-                            ),
-                        )
+                ExportPreviewCard(
+                    photo = photo,
+                    state = state,
+                    viewModel = viewModel,
+                    selectionMode = selectionMode,
+                    selectedForExport = selectedForExport,
+                    onClick = {
                         if (selectionMode) {
-                            Surface(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(6.dp)
-                                    .size(26.dp),
-                                shape = MaterialTheme.shapes.small,
-                                color = if (selectedForExport) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
-                                },
-                            ) {
-                                if (selectedForExport) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = "선택됨",
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                        )
-                                    }
-                                }
+                            onSelectionChange(photo.id, !selectedForExport)
+                        } else if (state.settings.enableExportPreviewZoom) {
+                            viewModel.setExpandedExportPhoto(photo.id)
+                        }
+                    },
+                    onLongClick = { onSelectionChange(photo.id, true) },
+                    onSave = { onSaveOne(photo.id) },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ExportPreviewCard(
+    photo: PhotoItem,
+    state: KeyxifUiState,
+    viewModel: KeyxifViewModel,
+    selectionMode: Boolean,
+    selectedForExport: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box {
+                RenderedPreview(
+                    photo = photo,
+                    viewModel = viewModel,
+                    renderKey = previewRenderKey("grid", state, photo),
+                    modifier = Modifier.combinedClickable(
+                        enabled = !state.exportProgress.isSaving,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    ),
+                )
+                if (selectionMode) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp)
+                            .size(26.dp),
+                        shape = CircleShape,
+                        color = if (selectedForExport) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                        },
+                    ) {
+                        if (selectedForExport) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "선택됨",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondary,
+                                )
                             }
                         }
                     }
-                    Text(
-                        text = photo.displayName,
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = photo.statusText(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (photo.renderStatus == RenderStatus.Error) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    OutlinedButton(
-                        enabled = !state.exportProgress.isSaving,
-                        onClick = { onSaveOne(photo.id) },
-                    ) {
-                        Text("이 사진 저장")
-                    }
                 }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = photo.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = photo.statusText(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (photo.renderStatus == RenderStatus.Error) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            FilledTonalButton(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp),
+                enabled = !state.exportProgress.isSaving,
+                onClick = onSave,
+            ) {
+                Text("이 사진 저장")
             }
         }
     }
@@ -258,7 +304,7 @@ private fun FullscreenPreviewDialog(
             decorFitsSystemWindows = false,
         ),
     ) {
-        DialogBlurBehindEffect()
+        DialogDimEffect()
         Surface(
             modifier = Modifier
                 .fillMaxSize()
@@ -306,8 +352,13 @@ private fun FullscreenPreviewDialog(
     }
 }
 
+/**
+ * 배경 블러는 KeyxifApp에서 앱 콘텐츠 전체에 Modifier.blur로 적용한다.
+ * (창 단위 FLAG_BLUR_BEHIND는 제조사가 지원하지 않는 기기가 많아 무시된다.)
+ * 여기서는 다이얼로그 창의 어두운 스크림 정도만 조정한다.
+ */
 @Composable
-private fun DialogBlurBehindEffect() {
+private fun DialogDimEffect() {
     val view = LocalView.current
     DisposableEffect(view) {
         val window = (view.parent as? DialogWindowProvider)?.window
@@ -316,21 +367,13 @@ private fun DialogBlurBehindEffect() {
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             val attributes = window.attributes
-            attributes.dimAmount = 0.16f
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                attributes.blurBehindRadius = 48
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-            }
+            attributes.dimAmount = 0.45f
             window.attributes = attributes
         }
         onDispose {
             if (window != null) {
                 val attributes = window.attributes
                 attributes.dimAmount = originalDimAmount
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    attributes.blurBehindRadius = 0
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                }
                 window.attributes = attributes
             }
         }
@@ -358,8 +401,8 @@ private fun ZoomableRenderedPreview(
 
     LaunchedEffect(photo.id, renderKey) {
         preview = PreviewRenderState(isLoading = true)
-        val rendered = runCatching { viewModel.renderPreviewBitmap(photo.id, FULLSCREEN_PREVIEW_LONG_SIDE) }.getOrNull()
-        val fallback = rendered ?: runCatching { viewModel.renderSourcePreviewBitmap(photo.id, FULLSCREEN_PREVIEW_LONG_SIDE) }.getOrNull()
+        val rendered = renderOrNull { viewModel.renderPreviewBitmap(photo.id, FULLSCREEN_PREVIEW_LONG_SIDE) }
+        val fallback = rendered ?: renderOrNull { viewModel.renderSourcePreviewBitmap(photo.id, FULLSCREEN_PREVIEW_LONG_SIDE) }
         preview = fallback?.let { PreviewRenderState(bitmap = it) }
             ?: PreviewRenderState(errorMessage = "미리보기를 만들 수 없습니다.")
         scale = 1f
@@ -472,9 +515,9 @@ private fun Offset.coerceForScale(
 
 private fun PhotoItem.statusText(): String {
     return when (renderStatus) {
-        RenderStatus.Idle -> "대기"
+        RenderStatus.Idle -> "저장 대기"
         RenderStatus.Rendering -> "저장 중"
-        RenderStatus.Saved -> "완료"
+        RenderStatus.Saved -> "저장 완료"
         RenderStatus.Error -> errorMessage ?: "실패"
     }
 }

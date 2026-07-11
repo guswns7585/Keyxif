@@ -232,7 +232,9 @@ object CanvasRenderUtils {
         val top = area.centerY() - effectiveSize / 2f
         val radius = effectiveSize / 2f
         val strokePaint = paint(strokeColor, 1f, style = Paint.Style.STROKE).apply {
-            strokeWidth = (effectiveSize * 0.055f).coerceIn(1f, effectiveSize * 0.11f)
+            // 저해상도 미리보기에서는 칩이 아주 작아져 상한(11%)이 1px보다 작아질 수 있다.
+            val maxStrokeWidth = (effectiveSize * 0.11f).coerceAtLeast(1f)
+            strokeWidth = (effectiveSize * 0.055f).coerceIn(1f, maxStrokeWidth)
         }
         displayColors.forEach { color ->
             canvas.drawCircle(left + radius, top + radius, radius, paint(color, 1f))

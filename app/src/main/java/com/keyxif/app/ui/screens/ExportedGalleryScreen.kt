@@ -128,7 +128,7 @@ fun ExportedGalleryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(18.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
