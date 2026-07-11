@@ -10,3 +10,4 @@ app/build/
 keystores/
 *.jks
 *.keystore
+github-secrets.txt
