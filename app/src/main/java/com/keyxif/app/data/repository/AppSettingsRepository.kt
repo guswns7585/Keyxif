@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.keyxif.app.domain.model.AppSettings
+import com.keyxif.app.domain.model.AppLanguageMode
+import com.keyxif.app.domain.model.AppThemeMode
 import com.keyxif.app.domain.model.CardTemplate
 import com.keyxif.app.domain.model.FileNameRule
 import com.keyxif.app.domain.model.NicknameStyle
@@ -69,6 +71,8 @@ class AppSettingsRepository(
             preferences[Keys.PALETTE_ANALYSIS_MODE] = next.paletteAnalysisMode.name
             preferences[Keys.PALETTE_CENTER_CROP_RATIO] = next.paletteCenterCropRatio
             preferences[Keys.AUTO_SELECT_LOGO_CONTRAST_VARIANT] = next.autoSelectLogoContrastVariant
+            preferences[Keys.LANGUAGE_MODE] = next.languageMode.name
+            preferences[Keys.THEME_MODE] = next.themeMode.name
         }
     }
 
@@ -108,6 +112,8 @@ class AppSettingsRepository(
             ),
             paletteCenterCropRatio = preferences[Keys.PALETTE_CENTER_CROP_RATIO] ?: 0.75f,
             autoSelectLogoContrastVariant = preferences[Keys.AUTO_SELECT_LOGO_CONTRAST_VARIANT] ?: true,
+            languageMode = enumValueOrDefault(preferences[Keys.LANGUAGE_MODE], AppLanguageMode.System),
+            themeMode = enumValueOrDefault(preferences[Keys.THEME_MODE], AppThemeMode.System),
         ).normalized()
     }
 
@@ -166,6 +172,8 @@ class AppSettingsRepository(
         val PALETTE_ANALYSIS_MODE = stringPreferencesKey("palette_analysis_mode")
         val PALETTE_CENTER_CROP_RATIO = floatPreferencesKey("palette_center_crop_ratio")
         val AUTO_SELECT_LOGO_CONTRAST_VARIANT = booleanPreferencesKey("auto_select_logo_contrast_variant")
+        val LANGUAGE_MODE = stringPreferencesKey("language_mode")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
     }
 
     private companion object {

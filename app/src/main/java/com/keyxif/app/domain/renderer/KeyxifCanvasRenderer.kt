@@ -57,22 +57,30 @@ class KeyxifCanvasRenderer(
                 destination = templateRenderer.photoBounds(bounds),
                 placement = templateRenderer.photoPlacement(),
             )
-            val logoPreset = presetRepository.logoForBuildInfo(photo.buildInfo)
-            logoBitmap = photo.buildInfo.customLogoUri?.let { uri ->
-                runCatching {
-                    BitmapUtils.decodeOrientedBitmap(context, uri, 512)
-                }.getOrNull()
-            } ?: decodeLogoBitmap(
-                context = context,
-                drawableResId = resolveLogoDrawable(
-                    logoPreset = logoPreset,
-                    tone = templateRenderer.logoBackgroundTone(),
-                    autoSelectVariant = settings.autoSelectLogoContrastVariant,
-                ),
-            )
-            val logoLabel = logoPreset?.name
-                ?: presetRepository.logoName(photo.buildInfo.logoId)
-                ?: ""
+            val logoPreset = if (photo.buildInfo.logoDisabled) null else presetRepository.logoForBuildInfo(photo.buildInfo)
+            logoBitmap = if (photo.buildInfo.logoDisabled) {
+                null
+            } else {
+                photo.buildInfo.customLogoUri?.let { uri ->
+                    runCatching {
+                        BitmapUtils.decodeOrientedBitmap(context, uri, 512)
+                    }.getOrNull()
+                } ?: decodeLogoBitmap(
+                    context = context,
+                    drawableResId = resolveLogoDrawable(
+                        logoPreset = logoPreset,
+                        tone = templateRenderer.logoBackgroundTone(),
+                        autoSelectVariant = settings.autoSelectLogoContrastVariant,
+                    ),
+                )
+            }
+            val logoLabel = if (photo.buildInfo.logoDisabled) {
+                ""
+            } else {
+                logoPreset?.name
+                    ?: presetRepository.logoName(photo.buildInfo.logoId)
+                    ?: ""
+            }
             val hasLogo = logoBitmap != null || logoLabel.isMeaningfulBuildText()
             val assets = RenderAssets(
                 logoBitmap = logoBitmap,

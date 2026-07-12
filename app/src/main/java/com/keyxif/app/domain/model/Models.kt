@@ -11,6 +11,7 @@ data class KeyboardBuildInfo(
     val nickname: String = "",
     val logoId: String? = null,
     val customLogoUri: Uri? = null,
+    val logoDisabled: Boolean = false,
 )
 
 data class VendorPreset(
@@ -179,7 +180,21 @@ data class AppSettings(
     val paletteAnalysisMode: PaletteAnalysisMode = PaletteAnalysisMode.CenterCrop,
     val paletteCenterCropRatio: Float = DEFAULT_PALETTE_CENTER_CROP_RATIO,
     val autoSelectLogoContrastVariant: Boolean = true,
+    val languageMode: AppLanguageMode = AppLanguageMode.System,
+    val themeMode: AppThemeMode = AppThemeMode.System,
 )
+
+enum class AppLanguageMode {
+    System,
+    Korean,
+    English,
+}
+
+enum class AppThemeMode {
+    System,
+    Light,
+    Dark,
+}
 
 enum class OutputFormat {
     WEBP,
@@ -317,6 +332,18 @@ fun NicknameStyle.displayName(): String = when (this) {
 fun PaletteAnalysisMode.displayName(): String = when (this) {
     PaletteAnalysisMode.FullImage -> "전체 이미지"
     PaletteAnalysisMode.CenterCrop -> "중앙 영역"
+}
+
+fun AppLanguageMode.displayName(): String = when (this) {
+    AppLanguageMode.System -> "시스템"
+    AppLanguageMode.Korean -> "한국어"
+    AppLanguageMode.English -> "English"
+}
+
+fun AppThemeMode.displayName(): String = when (this) {
+    AppThemeMode.System -> "시스템"
+    AppThemeMode.Light -> "라이트"
+    AppThemeMode.Dark -> "다크"
 }
 
 fun QualityPreset.applyTo(settings: AppSettings): AppSettings = when (this) {

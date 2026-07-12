@@ -77,6 +77,7 @@ class BuildPresetRepository(context: Context) {
         put("nickname", nickname)
         put("logoId", logoId)
         put("customLogoUri", customLogoUri?.toString())
+        put("logoDisabled", logoDisabled)
     }
 
     private fun JSONObject.toPreset(): BuildPreset {
@@ -93,6 +94,7 @@ class BuildPresetRepository(context: Context) {
                 nickname = info.optString("nickname"),
                 logoId = info.optNullableString("logoId"),
                 customLogoUri = info.optNullableString("customLogoUri")?.let(Uri::parse),
+                logoDisabled = info.optBoolean("logoDisabled", false),
             ),
             createdAt = optLong("createdAt"),
             updatedAt = optLong("updatedAt"),

@@ -33,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.keyxif.app.BuildConfig
+import com.keyxif.app.domain.model.AppLanguageMode
 import com.keyxif.app.domain.model.AppSettings
+import com.keyxif.app.domain.model.AppThemeMode
 import com.keyxif.app.domain.model.CardTemplate
 import com.keyxif.app.domain.model.FileNameRule
 import com.keyxif.app.domain.model.NicknameStyle
@@ -44,7 +46,10 @@ import com.keyxif.app.domain.model.UpdateCheckState
 import com.keyxif.app.domain.model.UpdateDownloadState
 import com.keyxif.app.domain.model.applyTo
 import com.keyxif.app.domain.model.displayName
+import com.keyxif.app.ui.KeyxifLanguage
 import com.keyxif.app.ui.components.ClearableTextField
+import com.keyxif.app.ui.currentKeyxifLanguage
+import com.keyxif.app.ui.text
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -67,6 +72,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val page = SettingsPage.entries.firstOrNull { it.name == selectedPageName }
+    val language = currentKeyxifLanguage(settings.languageMode)
 
     LazyColumn(
         modifier = modifier,
@@ -77,12 +83,12 @@ fun SettingsScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "설정",
+                        text = language.text("설정", "Settings"),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "필요한 항목만 열어 조정하세요.",
+                        text = language.text("필요한 항목만 열어 조정하세요.", "Open only the groups you want to adjust."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -90,8 +96,8 @@ fun SettingsScreen(
             }
             items(SettingsPage.entries, key = { it.name }) { item ->
                 SettingsMenuCard(
-                    title = item.title,
-                    subtitle = item.subtitle,
+                    title = item.title(language),
+                    subtitle = item.subtitle(language),
                     onClick = { onSelectedPageNameChange(item.name) },
                 )
             }
@@ -101,11 +107,11 @@ fun SettingsScreen(
                     contentPadding = PaddingValues(0.dp),
                     onClick = { onSelectedPageNameChange(null) },
                 ) {
-                    Text("< 설정")
+                    Text(language.text("< 설정", "< Settings"))
                 }
             }
             item {
-                SettingsSection(title = page!!.title) {
+                SettingsSection(title = page!!.title(language)) {
                     when (page!!) {
                         SettingsPage.Output -> OutputSettings(settings, onSettingsChange)
                         SettingsPage.Display -> DisplaySettings(settings, onSettingsChange)
@@ -235,6 +241,28 @@ private fun DisplaySettings(
     settings: AppSettings,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
 ) {
+    val language = currentKeyxifLanguage(settings.languageMode)
+    Text(language.text("언어", "Language"), style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        AppLanguageMode.entries.forEach { mode ->
+            FilterChip(
+                selected = settings.languageMode == mode,
+                onClick = { onSettingsChange { it.copy(languageMode = mode) } },
+                label = { Text(mode.displayName()) },
+            )
+        }
+    }
+    Text(language.text("화면 모드", "Appearance"), style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        AppThemeMode.entries.forEach { mode ->
+            FilterChip(
+                selected = settings.themeMode == mode,
+                onClick = { onSettingsChange { it.copy(themeMode = mode) } },
+                label = { Text(mode.displayName()) },
+            )
+        }
+    }
+    HorizontalDivider()
     Text(
         text = "텍스트 크기 ${"%.2f".format(settings.textScale)}x",
         style = MaterialTheme.typography.titleSmall,
@@ -709,20 +737,26 @@ private fun Long?.formatCheckedAt(): String {
 }
 
 private enum class SettingsPage(
-    val title: String,
-    val subtitle: String,
+    val titleKo: String,
+    val subtitleKo: String,
+    val titleEn: String,
+    val subtitleEn: String,
 ) {
-    Output("출력 설정", "품질, 해상도, 파일명"),
-    Display("표시 설정", "텍스트, 닉네임, 색상칩, 로고"),
-    Save("저장 설정", "저장 후 동작과 미리보기"),
-    Edit("편집 설정", "최근값, 기본 입력 동작"),
-    Session("세션 설정", "작업 임시 저장과 복구"),
-    Template("템플릿 설정", "기본 템플릿과 오버레이"),
-    Update("업데이트", "버전 확인과 설치"),
-    Gallery("완성 이미지 관리", "저장 목록 정리"),
-    About("앱 정보", "버전과 개인정보 처리"),
-    Developer("개발 정보", "문의와 기술 정보"),
+    Output("출력 설정", "품질, 해상도, 파일명", "Output", "Quality, resolution, file names"),
+    Display("표시 설정", "언어, 테마, 텍스트, 색상칩", "Display", "Language, theme, text, palette"),
+    Save("저장 설정", "저장 후 동작과 미리보기", "Save", "After-save behavior and preview"),
+    Edit("편집 설정", "최근값, 기본 입력 동작", "Editing", "Recent values and defaults"),
+    Session("세션 설정", "작업 임시 저장과 복구", "Session", "Draft save and restore"),
+    Template("템플릿 설정", "기본 템플릿과 오버레이", "Templates", "Defaults and overlays"),
+    Update("업데이트", "버전 확인과 설치", "Updates", "Version checks and install"),
+    Gallery("완성 이미지 관리", "저장 목록 정리", "Finished Images", "Saved image list"),
+    About("앱 정보", "버전과 개인정보 처리", "About", "Version and privacy"),
+    Developer("개발 정보", "문의와 기술 정보", "Developer", "Contact and technical info"),
 }
+
+private fun SettingsPage.title(language: KeyxifLanguage): String = language.text(titleKo, titleEn)
+
+private fun SettingsPage.subtitle(language: KeyxifLanguage): String = language.text(subtitleKo, subtitleEn)
 
 private data class MaxLongSideOption(
     val label: String,

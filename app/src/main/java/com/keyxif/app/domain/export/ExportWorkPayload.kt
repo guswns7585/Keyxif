@@ -2,6 +2,8 @@ package com.keyxif.app.domain.export
 
 import android.net.Uri
 import com.keyxif.app.domain.model.AppSettings
+import com.keyxif.app.domain.model.AppLanguageMode
+import com.keyxif.app.domain.model.AppThemeMode
 import com.keyxif.app.domain.model.CardTemplate
 import com.keyxif.app.domain.model.FileNameRule
 import com.keyxif.app.domain.model.KeyboardBuildInfo
@@ -73,6 +75,7 @@ object ExportWorkPayloadCodec {
         put("nickname", nickname)
         put("logoId", logoId)
         put("customLogoUri", customLogoUri?.toString())
+        put("logoDisabled", logoDisabled)
     }
 
     private fun PhotoAnalysisResult.toJson(): JSONObject = JSONObject().apply {
@@ -112,6 +115,7 @@ object ExportWorkPayloadCodec {
             nickname = optString("nickname"),
             logoId = optNullableString("logoId"),
             customLogoUri = optNullableString("customLogoUri")?.let(Uri::parse),
+            logoDisabled = optBoolean("logoDisabled", false),
         )
     }
 
@@ -147,6 +151,8 @@ object ExportWorkPayloadCodec {
         put("paletteAnalysisMode", paletteAnalysisMode.name)
         put("paletteCenterCropRatio", paletteCenterCropRatio)
         put("autoSelectLogoContrastVariant", autoSelectLogoContrastVariant)
+        put("languageMode", languageMode.name)
+        put("themeMode", themeMode.name)
     }
 
     private fun JSONObject.toSettings(): AppSettings {
@@ -185,6 +191,8 @@ object ExportWorkPayloadCodec {
             ),
             paletteCenterCropRatio = optDouble("paletteCenterCropRatio", 0.75).toFloat(),
             autoSelectLogoContrastVariant = optBoolean("autoSelectLogoContrastVariant", true),
+            languageMode = enumValueOrDefault(optString("languageMode"), AppLanguageMode.System),
+            themeMode = enumValueOrDefault(optString("themeMode"), AppThemeMode.System),
         )
     }
 

@@ -26,6 +26,9 @@ object PresetData {
         const val LIN = "lin"
         const val MACHINA = "machina"
         const val NUXROS = "nuxros"
+        const val KBDFANS = "kbdfans"
+        const val BAIONLENJA = "baionlenja"
+        const val JJW = "jjw"
     }
 
     object VendorIds {
@@ -45,6 +48,9 @@ object PresetData {
         const val LIN = "lin"
         const val MACHINA = "machina"
         const val NUXROS = "nuxros"
+        const val KBDFANS = "kbdfans"
+        const val BAIONLENJA = "baionlenja"
+        const val JJW = "jjw"
     }
 
     val logos = listOf(
@@ -65,9 +71,14 @@ object PresetData {
         logo(LogoIds.LIN, "Linworks", white = R.drawable.logo_lin_w, black = R.drawable.logo_lin_b, aliases = arrayOf("Lin", "Lin")),
         logo(LogoIds.MACHINA, "Machina", default = R.drawable.logo_machina, aliases = arrayOf("Machina", "Machina")),
         logo(LogoIds.NUXROS, "Nuxros", white = R.drawable.logo_nuxros_w, black = R.drawable.logo_nuxros_b, aliases = arrayOf("Nuxros", "Nuxros")),
+        logo(LogoIds.KBDFANS, "KBDfans", white = R.drawable.logo_kbdfans_w, black = R.drawable.logo_kbdfans_b, aliases = arrayOf("Kbdfans", "Kbdfans")),
+        logo(LogoIds.BAIONLENJA, "Baionlenja", white = R.drawable.logo_baionlenja_w, black = R.drawable.logo_baionlanja_b, aliases = arrayOf("Baionlenja", "Baionlenja")),
+        logo(LogoIds.OWLAB, "Owlab", white = R.drawable.logo_owlab_w, black = R.drawable.logo_owlab_b, aliases = arrayOf("Owlab", "Owlab")),
+        logo(LogoIds.JJW, "JJW", white = R.drawable.logo_jjw_w, black = R.drawable.logo_jjw_b, aliases = arrayOf("Jjw", "Jjw")),
     )
 
-    val vendors = listOf(
+    val vendors = (
+        listOf(
         vendor(VendorIds.QWERTYKEYS, "Qwertykeys", LogoIds.QWERTYKEYS, "QK", "Neo Studio"),
         vendor(VendorIds.GEON, "Geonworks", LogoIds.GEON, "Geon"),
         vendor(VendorIds.MODE, "Mode", LogoIds.MODE, "Mode Designs"),
@@ -84,7 +95,12 @@ object PresetData {
         vendor(VendorIds.LIN, "Lin", LogoIds.LIN, "Lin"),
         vendor(VendorIds.MACHINA, "Machina", LogoIds.MACHINA, "Machina"),
         vendor(VendorIds.NUXROS, "Nuxros", LogoIds.NUXROS, "Nuxros"),
-    )
+        vendor(VendorIds.KBDFANS, "KBDfans", LogoIds.KBDFANS, "Kbdfans"),
+        vendor(VendorIds.BAIONLENJA, "Baionlenja", LogoIds.BAIONLENJA, "Baionlenja"),
+        vendor(VendorIds.OWLAB, "Owlab", LogoIds.OWLAB, "Owlab"),
+        vendor(VendorIds.JJW, "JJW", LogoIds.JJW, "Jjw", "JJW Concepts"),
+        ) + GeneratedPresetData.vendors
+        ).distinctBy { it.id }
 
     val plates = listOf(
         "Alu",
@@ -109,7 +125,8 @@ object PresetData {
         "Tadpole-mount",
     )
 
-    val switches = listOf(
+    val switches = (
+        listOf(
         switch("hmx-hyacinth", "HMX Hyacinth", "HMX", "Hyacinth", "Hyacinth V2"),
         switch("hmx-xinhai", "HMX Xinhai", "HMX", "Xinhai"),
         switch("mx-black", "Cherry MX Black", "Cherry", "MX Black", "Hyperglide Black"),
@@ -122,9 +139,11 @@ object PresetData {
         switch("kailh-box-white", "Kailh Box White", "Kailh", "Box White"),
         switch("cream", "NovelKeys Cream", "NovelKeys", "NK Cream"),
         switch("bsun-raw", "BSUN Raw", "BSUN", "Raw"),
-    )
+        ) + GeneratedPresetData.switches
+        ).distinctBy { it.switchKey() }
 
-    val housings = listOf(
+    val housings = (
+        listOf(
         housing(
             id = "neo65",
             name = "Neo65",
@@ -180,16 +199,27 @@ object PresetData {
             vendorId = VendorIds.MATRIX,
             aliases = listOf("Corsa"),
         ),
-    )
+        ) + GeneratedPresetData.housings
+        ).distinctBy { it.housingKey() }
 
-    val keycaps = listOf(
+    val keycaps = (
+        listOf(
         keycap("gmk-honor", "GMK Honor", "GMK", "Honor"),
         keycap("gmk-hammerhead", "GMK Hammerhead", "GMK", "Hammerhead"),
         keycap("gmk-botanical", "GMK Botanical", "GMK", "Botanical"),
         keycap("epbt-be-the-one", "ePBT Be The One", "ePBT", "Be The One"),
         keycap("crp-jipink", "CRP JiPink", "CRP", "JiPink"),
         keycap("mw-heresy", "MW Heresy", "Milkyway", "Heresy"),
-    )
+        ) + GeneratedPresetData.keycaps
+        ).distinctBy { it.keycapKey() }
+
+    private fun SwitchPreset.switchKey(): String = "${manufacturer.orEmpty().presetKey()}|${name.presetKey()}"
+
+    private fun HousingPreset.housingKey(): String = "${vendorId.orEmpty().presetKey()}|${name.presetKey()}"
+
+    private fun KeycapPreset.keycapKey(): String = "${manufacturer.orEmpty().presetKey()}|${name.presetKey()}"
+
+    private fun String.presetKey(): String = trim().lowercase().replace(Regex("[^a-z0-9가-힣]+"), "")
 
     private fun logo(
         id: String,

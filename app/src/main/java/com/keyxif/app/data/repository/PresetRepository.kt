@@ -43,6 +43,7 @@ class PresetRepository {
     }
 
     fun logoForBuildInfo(info: KeyboardBuildInfo): LogoPreset? {
+        if (info.logoDisabled) return null
         info.logoId?.let { logoPreset(it)?.let { logo -> return logo } }
         val housingText = info.housing.meaningfulBuildTextOrNull() ?: return null
         housingByName(housingText)?.let { housing ->
@@ -56,28 +57,30 @@ class PresetRepository {
         recentValues: List<String>,
     ): List<PresetChoice<HousingPreset>> {
         val normalized = query.trim()
+        val normalizedQuery = normalized.normalizedKey()
         val recentChoices = recentValues
-            .filter { it.contains(normalized, ignoreCase = true) || normalized.isBlank() }
+            .filter { it.matchesPresetQuery(normalized, normalizedQuery) || normalized.isBlank() }
             .map { PresetChoice<HousingPreset>(title = it, subtitle = "최근 사용", isRecent = true) }
 
         val presetChoices = PresetData.housings
             .filter { preset ->
                 val vendor = vendorById(preset.vendorId)
                 normalized.isBlank() ||
-                    preset.name.contains(normalized, ignoreCase = true) ||
-                    preset.vendor?.contains(normalized, ignoreCase = true) == true ||
-                    preset.designer?.contains(normalized, ignoreCase = true) == true ||
-                    preset.aliases.any { it.contains(normalized, ignoreCase = true) } ||
-                    vendor?.aliases?.any { it.contains(normalized, ignoreCase = true) } == true
+                    preset.name.matchesPresetQuery(normalized, normalizedQuery) ||
+                    preset.vendor?.matchesPresetQuery(normalized, normalizedQuery) == true ||
+                    preset.designer?.matchesPresetQuery(normalized, normalizedQuery) == true ||
+                    preset.aliases.any { it.matchesPresetQuery(normalized, normalizedQuery) } ||
+                    vendor?.aliases?.any { it.matchesPresetQuery(normalized, normalizedQuery) } == true
             }
+            .sortedBy { it.searchRank(normalized, normalizedQuery) }
             .map { preset ->
                 val maker = listOfNotNull(preset.vendor, preset.designer).distinct().joinToString(" / ")
                 PresetChoice(title = preset.name, subtitle = maker.ifBlank { null }, preset = preset)
             }
 
         return (recentChoices + presetChoices)
-            .distinctBy { it.title.normalizedKey() }
-            .take(8)
+            .distinctBy { "${it.title.normalizedKey()}|${it.subtitle.orEmpty().normalizedKey()}" }
+            .take(resultLimit(normalized))
     }
 
     fun searchSwitch(
@@ -86,26 +89,28 @@ class PresetRepository {
         includePresets: Boolean,
     ): List<PresetChoice<SwitchPreset>> {
         val normalized = query.trim()
+        val normalizedQuery = normalized.normalizedKey()
         val recentChoices = recentValues
-            .filter { it.contains(normalized, ignoreCase = true) || normalized.isBlank() }
+            .filter { it.matchesPresetQuery(normalized, normalizedQuery) || normalized.isBlank() }
             .map { PresetChoice<SwitchPreset>(title = it, subtitle = "최근 사용", isRecent = true) }
 
-        if (!includePresets) return recentChoices.distinctBy { it.title.normalizedKey() }.take(8)
+        if (!includePresets) return recentChoices.distinctBy { it.title.normalizedKey() }.take(resultLimit(normalized))
 
         val presetChoices = PresetData.switches
             .filter { preset ->
                 normalized.isBlank() ||
-                    preset.name.contains(normalized, ignoreCase = true) ||
-                    preset.manufacturer?.contains(normalized, ignoreCase = true) == true ||
-                    preset.aliases.any { it.contains(normalized, ignoreCase = true) }
+                    preset.name.matchesPresetQuery(normalized, normalizedQuery) ||
+                    preset.manufacturer?.matchesPresetQuery(normalized, normalizedQuery) == true ||
+                    preset.aliases.any { it.matchesPresetQuery(normalized, normalizedQuery) }
             }
+            .sortedBy { it.searchRank(normalized, normalizedQuery) }
             .map { preset ->
                 PresetChoice(title = preset.name, subtitle = preset.manufacturer ?: "앱 지원", preset = preset)
             }
 
         return (recentChoices + presetChoices)
-            .distinctBy { it.title.normalizedKey() }
-            .take(10)
+            .distinctBy { "${it.title.normalizedKey()}|${it.subtitle.orEmpty().normalizedKey()}" }
+            .take(resultLimit(normalized))
     }
 
     fun searchKeycap(
@@ -113,25 +118,57 @@ class PresetRepository {
         recentValues: List<String>,
     ): List<PresetChoice<KeycapPreset>> {
         val normalized = query.trim()
+        val normalizedQuery = normalized.normalizedKey()
         val recentChoices = recentValues
-            .filter { it.contains(normalized, ignoreCase = true) || normalized.isBlank() }
+            .filter { it.matchesPresetQuery(normalized, normalizedQuery) || normalized.isBlank() }
             .map { PresetChoice<KeycapPreset>(title = it, subtitle = "최근 사용", isRecent = true) }
 
         val presetChoices = PresetData.keycaps
             .filter { preset ->
                 normalized.isBlank() ||
-                    preset.name.contains(normalized, ignoreCase = true) ||
-                    preset.manufacturer?.contains(normalized, ignoreCase = true) == true ||
-                    preset.aliases.any { it.contains(normalized, ignoreCase = true) }
+                    preset.name.matchesPresetQuery(normalized, normalizedQuery) ||
+                    preset.manufacturer?.matchesPresetQuery(normalized, normalizedQuery) == true ||
+                    preset.aliases.any { it.matchesPresetQuery(normalized, normalizedQuery) }
             }
+            .sortedBy { it.searchRank(normalized, normalizedQuery) }
             .map { preset ->
                 PresetChoice(title = preset.name, subtitle = preset.manufacturer, preset = preset)
             }
 
         return (recentChoices + presetChoices)
-            .distinctBy { it.title.normalizedKey() }
-            .take(8)
+            .distinctBy { "${it.title.normalizedKey()}|${it.subtitle.orEmpty().normalizedKey()}" }
+            .take(resultLimit(normalized))
     }
+
+    private fun resultLimit(query: String): Int = if (query.isBlank()) 80 else 160
+
+    private fun HousingPreset.searchRank(
+        query: String,
+        normalizedQuery: String,
+    ): Int = minOf(
+        name.searchRank(query, normalizedQuery),
+        vendor?.searchRank(query, normalizedQuery) ?: Int.MAX_VALUE,
+        designer?.searchRank(query, normalizedQuery) ?: Int.MAX_VALUE,
+        aliases.minOfOrNull { it.searchRank(query, normalizedQuery) } ?: Int.MAX_VALUE,
+    )
+
+    private fun SwitchPreset.searchRank(
+        query: String,
+        normalizedQuery: String,
+    ): Int = minOf(
+        name.searchRank(query, normalizedQuery),
+        manufacturer?.searchRank(query, normalizedQuery) ?: Int.MAX_VALUE,
+        aliases.minOfOrNull { it.searchRank(query, normalizedQuery) } ?: Int.MAX_VALUE,
+    )
+
+    private fun KeycapPreset.searchRank(
+        query: String,
+        normalizedQuery: String,
+    ): Int = minOf(
+        name.searchRank(query, normalizedQuery),
+        manufacturer?.searchRank(query, normalizedQuery) ?: Int.MAX_VALUE,
+        aliases.minOfOrNull { it.searchRank(query, normalizedQuery) } ?: Int.MAX_VALUE,
+    )
 
     private fun vendorById(id: String?): VendorPreset? = PresetData.vendors.firstOrNull { it.id == id }
 
@@ -156,5 +193,31 @@ class PresetRepository {
 
     private fun String.normalizedKey(): String {
         return trim().lowercase().replace(Regex("[^a-z0-9가-힣]+"), "")
+    }
+
+    private fun String.matchesPresetQuery(
+        query: String,
+        normalizedQuery: String,
+    ): Boolean {
+        if (query.isBlank()) return true
+        if (contains(query, ignoreCase = true)) return true
+        return normalizedQuery.isNotBlank() && normalizedKey().contains(normalizedQuery)
+    }
+
+    private fun String.searchRank(
+        query: String,
+        normalizedQuery: String,
+    ): Int {
+        if (query.isBlank()) return 0
+        val normalizedValue = normalizedKey()
+        return when {
+            equals(query, ignoreCase = true) -> 0
+            startsWith(query, ignoreCase = true) -> 1
+            normalizedQuery.isNotBlank() && normalizedValue == normalizedQuery -> 2
+            normalizedQuery.isNotBlank() && normalizedValue.startsWith(normalizedQuery) -> 3
+            contains(query, ignoreCase = true) -> 4
+            normalizedQuery.isNotBlank() && normalizedValue.contains(normalizedQuery) -> 5
+            else -> Int.MAX_VALUE
+        }
     }
 }

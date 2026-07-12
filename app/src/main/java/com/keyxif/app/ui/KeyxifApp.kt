@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -60,7 +61,6 @@ import com.keyxif.app.domain.model.AppStep
 import com.keyxif.app.domain.model.KeyboardBuildInfo
 import com.keyxif.app.domain.model.UpdateDownloadState
 import com.keyxif.app.domain.model.UpdateInfo
-import com.keyxif.app.domain.model.displayName
 import com.keyxif.app.ui.screens.BuildInfoScreen
 import com.keyxif.app.ui.screens.ExportScreen
 import com.keyxif.app.ui.screens.ExportedGalleryScreen
@@ -278,6 +278,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         onHousingPreset = viewModel::selectHousingPreset,
                         onSwitchPreset = viewModel::selectSwitchPreset,
                         onKeycapPreset = viewModel::selectKeycapPreset,
+                        onClearBuildInfo = viewModel::clearSelectedBuildInfo,
                         onApplyToAll = viewModel::applyBuildInfoToAll,
                         onPresetQueryChange = viewModel::updatePresetQuery,
                         onSavePreset = viewModel::saveBuildPreset,
@@ -318,10 +319,12 @@ private fun KeyxifTopBar(
     onBackFromGallery: () -> Unit,
     onStepClick: (AppStep) -> Unit,
 ) {
+    val language = currentKeyxifLanguage(state.settings.languageMode)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -336,10 +339,14 @@ private fun KeyxifTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = if (state.isSettingsOpen) onBackFromSettings else onBackFromGallery) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = language.text("뒤로가기", "Back"))
                     }
                     Text(
-                        text = if (state.isSettingsOpen) "설정" else "완성 이미지",
+                        text = if (state.isSettingsOpen) {
+                            language.text("설정", "Settings")
+                        } else {
+                            language.text("완성 이미지", "Finished Images")
+                        },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                     )
@@ -370,7 +377,7 @@ private fun KeyxifTopBar(
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             Text(
-                                text = "사진 ${state.photos.size}장",
+                                text = language.text("사진 ${state.photos.size}장", "${state.photos.size} photos"),
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -378,10 +385,10 @@ private fun KeyxifTopBar(
                         }
                     }
                     IconButton(onClick = onGallery) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = "완성 이미지")
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = language.text("완성 이미지", "Finished Images"))
                     }
                     IconButton(onClick = onSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "설정")
+                        Icon(Icons.Default.Settings, contentDescription = language.text("설정", "Settings"))
                     }
                 }
             }
@@ -389,6 +396,7 @@ private fun KeyxifTopBar(
         if (!state.isSettingsOpen && !state.isGalleryOpen) {
             KeyxifStepIndicator(
                 currentStep = state.currentStep,
+                language = language,
                 onStepClick = onStepClick,
             )
         }
@@ -398,6 +406,7 @@ private fun KeyxifTopBar(
 @Composable
 private fun KeyxifStepIndicator(
     currentStep: AppStep,
+    language: KeyxifLanguage,
     onStepClick: (AppStep) -> Unit,
 ) {
     Surface(
@@ -459,7 +468,7 @@ private fun KeyxifStepIndicator(
                             }
                         }
                         Text(
-                            text = step.displayName(),
+                            text = stepDisplayName(step, language),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                             color = if (selected) {
@@ -485,6 +494,7 @@ private fun StepBottomActions(
     onSaveAll: () -> Unit,
     selectedExportCount: Int,
 ) {
+    val language = currentKeyxifLanguage(state.settings.languageMode)
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
@@ -511,7 +521,7 @@ private fun StepBottomActions(
                         enabled = !state.exportProgress.isSaving,
                         onClick = onPrevious,
                     ) {
-                        Text("이전")
+                        Text(language.text("이전", "Previous"))
                     }
                 }
 
@@ -523,7 +533,13 @@ private fun StepBottomActions(
                         enabled = selectedExportCount > 0 && !state.exportProgress.isSaving,
                         onClick = onSaveSelected,
                     ) {
-                        Text(if (selectedExportCount > 0) "선택 저장 $selectedExportCount" else "선택 저장")
+                        Text(
+                            if (selectedExportCount > 0) {
+                                language.text("선택 저장 $selectedExportCount", "Save selected $selectedExportCount")
+                            } else {
+                                language.text("선택 저장", "Save selected")
+                            },
+                        )
                     }
                     Button(
                         modifier = Modifier
@@ -532,7 +548,7 @@ private fun StepBottomActions(
                         enabled = state.photos.isNotEmpty() && !state.exportProgress.isSaving,
                         onClick = onSaveAll,
                     ) {
-                        Text("전체 저장")
+                        Text(language.text("전체 저장", "Save all"))
                     }
                 } else {
                     Button(
@@ -542,7 +558,7 @@ private fun StepBottomActions(
                         enabled = !state.exportProgress.isSaving,
                         onClick = onNext,
                     ) {
-                        Text(nextActionLabel(state.currentStep))
+                        Text(nextActionLabel(state.currentStep, language))
                     }
                 }
             }
@@ -682,11 +698,24 @@ private fun previousStep(step: AppStep): AppStep? = when (step) {
     AppStep.Export -> AppStep.Template
 }
 
-private fun nextActionLabel(step: AppStep): String = when (step) {
-    AppStep.Photos -> "빌드 정보 입력"
-    AppStep.BuildInfo -> "템플릿 선택"
-    AppStep.Template -> "미리보기 · 저장"
-    AppStep.Export -> "저장"
+private fun stepDisplayName(
+    step: AppStep,
+    language: KeyxifLanguage,
+): String = when (step) {
+    AppStep.Photos -> language.text("사진", "Photos")
+    AppStep.BuildInfo -> language.text("정보", "Info")
+    AppStep.Template -> language.text("템플릿", "Template")
+    AppStep.Export -> language.text("저장", "Export")
+}
+
+private fun nextActionLabel(
+    step: AppStep,
+    language: KeyxifLanguage,
+): String = when (step) {
+    AppStep.Photos -> language.text("빌드 정보 입력", "Enter build info")
+    AppStep.BuildInfo -> language.text("템플릿 선택", "Choose template")
+    AppStep.Template -> language.text("미리보기 · 저장", "Preview & save")
+    AppStep.Export -> language.text("저장", "Save")
 }
 
 private sealed interface ExportRequest {

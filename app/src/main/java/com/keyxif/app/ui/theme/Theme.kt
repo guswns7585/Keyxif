@@ -1,22 +1,30 @@
 package com.keyxif.app.ui.theme
 
+import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import com.keyxif.app.domain.model.AppThemeMode
 
 // 잉크 + 웜 페이퍼 + 코퍼 포인트. 키보드 빌드 시트 느낌의 차분한 톤.
 private val Ink = Color(0xFF1C1B17)
 private val Paper = Color(0xFFF7F5F0)
 private val Copper = Color(0xFFA85D2B)
 
-private val KeyxifColors = lightColorScheme(
+private val KeyxifLightColors = lightColorScheme(
     primary = Ink,
     onPrimary = Color(0xFFFBFAF7),
     primaryContainer = Color(0xFFE9E5DC),
@@ -49,6 +57,39 @@ private val KeyxifColors = lightColorScheme(
     onErrorContainer = Color(0xFF541F1A),
 )
 
+private val KeyxifDarkColors = darkColorScheme(
+    primary = Color(0xFFF4EEE4),
+    onPrimary = Color(0xFF28241E),
+    primaryContainer = Color(0xFF3C372F),
+    onPrimaryContainer = Color(0xFFF4EEE4),
+    secondary = Color(0xFFE0A36B),
+    onSecondary = Color(0xFF2B1607),
+    secondaryContainer = Color(0xFF5B371A),
+    onSecondaryContainer = Color(0xFFFFDCC1),
+    tertiary = Color(0xFFB7C9AF),
+    onTertiary = Color(0xFF22301F),
+    tertiaryContainer = Color(0xFF394A35),
+    onTertiaryContainer = Color(0xFFE1EFD8),
+    background = Color(0xFF151411),
+    onBackground = Color(0xFFF4EEE4),
+    surface = Color(0xFF1D1B17),
+    onSurface = Color(0xFFF4EEE4),
+    surfaceVariant = Color(0xFF4F4A41),
+    onSurfaceVariant = Color(0xFFD2CABD),
+    surfaceContainerLowest = Color(0xFF10100E),
+    surfaceContainerLow = Color(0xFF191713),
+    surfaceContainer = Color(0xFF22201B),
+    surfaceContainerHigh = Color(0xFF2C2923),
+    surfaceContainerHighest = Color(0xFF363229),
+    surfaceTint = Color(0xFFE0A36B),
+    outline = Color(0xFF8B8377),
+    outlineVariant = Color(0xFF514C44),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+)
+
 private val KeyxifShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
@@ -61,15 +102,15 @@ private val KeyxifTypography = Typography().let { base ->
     base.copy(
         headlineSmall = base.headlineSmall.copy(
             fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.4).sp,
+            letterSpacing = 0.sp,
         ),
         titleLarge = base.titleLarge.copy(
             fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.3).sp,
+            letterSpacing = 0.sp,
         ),
         titleMedium = base.titleMedium.copy(
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.1).sp,
+            letterSpacing = 0.sp,
         ),
         titleSmall = base.titleSmall.copy(
             fontWeight = FontWeight.SemiBold,
@@ -85,9 +126,31 @@ private val KeyxifTypography = Typography().let { base ->
 }
 
 @Composable
-fun KeyxifTheme(content: @Composable () -> Unit) {
+fun KeyxifTheme(
+    themeMode: AppThemeMode = AppThemeMode.System,
+    content: @Composable () -> Unit,
+) {
+    val darkTheme = when (themeMode) {
+        AppThemeMode.System -> isSystemInDarkTheme()
+        AppThemeMode.Light -> false
+        AppThemeMode.Dark -> true
+    }
+    val colorScheme = if (darkTheme) KeyxifDarkColors else KeyxifLightColors
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            window.statusBarColor = colorScheme.background.toArgb()
+            window.navigationBarColor = colorScheme.surfaceContainerLow.toArgb()
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
+
     MaterialTheme(
-        colorScheme = KeyxifColors,
+        colorScheme = colorScheme,
         shapes = KeyxifShapes,
         typography = KeyxifTypography,
         content = content,

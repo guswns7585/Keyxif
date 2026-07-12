@@ -540,6 +540,10 @@ class KeyxifViewModel(
         updatePhoto(photoId) { it.copy(buildInfo = buildInfo) }
     }
 
+    fun clearSelectedBuildInfo() {
+        updateSelectedBuildInfo { KeyboardBuildInfo() }
+    }
+
     fun applyBuildInfoToAll() {
         val info = uiState.value.selectedPhoto?.buildInfo ?: return
         _uiState.update { state ->
@@ -554,6 +558,7 @@ class KeyxifViewModel(
                 housing = preset.name,
                 logoId = presetRepository.logoIdForHousing(preset) ?: info.logoId,
                 customLogoUri = null,
+                logoDisabled = false,
             )
         }
     }

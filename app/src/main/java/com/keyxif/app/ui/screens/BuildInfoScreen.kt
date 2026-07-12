@@ -86,6 +86,7 @@ fun BuildInfoScreen(
     onHousingPreset: (HousingPreset) -> Unit,
     onSwitchPreset: (SwitchPreset) -> Unit,
     onKeycapPreset: (KeycapPreset) -> Unit,
+    onClearBuildInfo: () -> Unit,
     onApplyToAll: () -> Unit,
     onPresetQueryChange: (String) -> Unit,
     onSavePreset: (String) -> Unit,
@@ -102,7 +103,7 @@ fun BuildInfoScreen(
     val logoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri: Uri? ->
-            uri?.let { onBuildInfoChange(info.copy(customLogoUri = it, logoId = null)) }
+            uri?.let { onBuildInfoChange(info.copy(customLogoUri = it, logoId = null, logoDisabled = false)) }
         },
     )
     var showPresetPicker by rememberSaveable { mutableStateOf(false) }
@@ -202,6 +203,12 @@ fun BuildInfoScreen(
                     onClick = onApplyToAll,
                 ) {
                     Text("이 빌드 정보를 모든 사진에 적용")
+                }
+                OutlinedButton(
+                    enabled = selectedPhoto != null,
+                    onClick = onClearBuildInfo,
+                ) {
+                    Text("빌드 정보 초기화")
                 }
             }
         }
@@ -331,7 +338,9 @@ fun BuildInfoScreen(
                     plates.forEach { plate ->
                         FilterChip(
                             selected = info.plate == plate,
-                            onClick = { onBuildInfoChange(info.copy(plate = plate)) },
+                            onClick = {
+                                onBuildInfoChange(info.copy(plate = if (info.plate == plate) "" else plate))
+                            },
                             label = { Text(plate) },
                         )
                     }
@@ -348,7 +357,9 @@ fun BuildInfoScreen(
                     mounts.forEach { mount ->
                         FilterChip(
                             selected = info.mount == mount,
-                            onClick = { onBuildInfoChange(info.copy(mount = mount)) },
+                            onClick = {
+                                onBuildInfoChange(info.copy(mount = if (info.mount == mount) "" else mount))
+                            },
                             label = { Text(mount) },
                         )
                     }
@@ -376,27 +387,62 @@ fun BuildInfoScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilterChip(
-                        selected = info.logoId == null && info.customLogoUri == null,
-                        onClick = { onBuildInfoChange(info.copy(logoId = null, customLogoUri = null)) },
+                        selected = info.logoDisabled,
+                        onClick = {
+                            onBuildInfoChange(
+                                info.copy(
+                                    logoId = null,
+                                    customLogoUri = null,
+                                    logoDisabled = !info.logoDisabled,
+                                ),
+                            )
+                        },
+                        label = { Text("로고 없음") },
+                    )
+                    val autoLogoSelected = !info.logoDisabled && info.logoId == null && info.customLogoUri == null
+                    FilterChip(
+                        selected = autoLogoSelected,
+                        onClick = {
+                            onBuildInfoChange(
+                                info.copy(
+                                    logoId = null,
+                                    customLogoUri = null,
+                                    logoDisabled = autoLogoSelected,
+                                ),
+                            )
+                        },
                         label = { Text("자동") },
                     )
                     logos.forEach { logo ->
+                        val selected = !info.logoDisabled && info.logoId == logo.id && info.customLogoUri == null
                         FilterChip(
-                            selected = info.logoId == logo.id && info.customLogoUri == null,
-                            onClick = { onBuildInfoChange(info.copy(logoId = logo.id, customLogoUri = null)) },
+                            selected = selected,
+                            onClick = {
+                                onBuildInfoChange(
+                                    info.copy(
+                                        logoId = if (selected) null else logo.id,
+                                        customLogoUri = null,
+                                        logoDisabled = selected,
+                                    ),
+                                )
+                            },
                             label = { Text(logo.name) },
                         )
                     }
                     FilterChip(
-                        selected = info.customLogoUri != null,
+                        selected = !info.logoDisabled && info.customLogoUri != null,
                         onClick = {
-                            logoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            if (!info.logoDisabled && info.customLogoUri != null) {
+                                onBuildInfoChange(info.copy(logoId = null, customLogoUri = null, logoDisabled = true))
+                            } else {
+                                logoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
                         },
                         label = { Text(if (info.customLogoUri == null) "로고 업로드" else "사용자 로고") },
                         leadingIcon = { Icon(Icons.Default.Upload, contentDescription = null) },
                     )
                 }
-                info.customLogoUri?.let { uri ->
+                info.customLogoUri?.takeUnless { info.logoDisabled }?.let { uri ->
                     AsyncImage(
                         model = uri,
                         contentDescription = "사용자 로고 미리보기",
