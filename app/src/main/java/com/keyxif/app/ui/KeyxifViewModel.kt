@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -1386,20 +1387,43 @@ class KeyxifViewModel(
             "${BuildConfig.APPLICATION_ID}.fileprovider",
             apkFile,
         )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
+        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setDataAndType(uri, APK_MIME_TYPE)
+            clipData = ClipData.newUri(app.contentResolver, "Keyxif update APK", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra(Intent.EXTRA_RETURN_RESULT, false)
         }
+        grantApkReadPermission(app, uri, intent)
         val opened = runCatching {
             app.startActivity(intent)
+        }.onFailure { error ->
+            _uiState.update {
+                it.copy(uiMessage = "설치 화면을 열 수 없습니다: ${error.message ?: "알 수 없는 오류"}")
+            }
         }.isSuccess
         if (!opened) {
             val fallbackUrl = uiState.value.updateCheckState.latestInfo?.apkUrl.orEmpty()
             if (fallbackUrl.isNotBlank()) {
                 openUrl(fallbackUrl, "설치 화면을 열 수 없어 브라우저 다운로드로 전환합니다.")
-            } else {
-                _uiState.update { it.copy(uiMessage = "설치 화면을 열 수 없습니다.") }
+            }
+        }
+    }
+
+    private fun grantApkReadPermission(
+        app: Application,
+        uri: Uri,
+        intent: Intent,
+    ) {
+        val flags = PackageManager.MATCH_DEFAULT_ONLY
+        app.packageManager.queryIntentActivities(intent, flags).forEach { resolveInfo ->
+            runCatching {
+                app.grantUriPermission(
+                    resolveInfo.activityInfo.packageName,
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
             }
         }
     }
@@ -1562,5 +1586,6 @@ class KeyxifViewModel(
 
     private companion object {
         const val SUPPORT_EMAIL = "typenews902@gmail.com"
+        const val APK_MIME_TYPE = "application/vnd.android.package-archive"
     }
 }
