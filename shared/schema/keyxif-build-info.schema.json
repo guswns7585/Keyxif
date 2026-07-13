@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keyxif.local/schema/keyxif-build-info.schema.json",
+  "title": "KeyxifBuildInfo",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "housing": { "type": ["string", "null"] },
+    "switchName": { "type": ["string", "null"] },
+    "plate": { "type": ["string", "null"] },
+    "mount": { "type": ["string", "null"] },
+    "keycap": { "type": ["string", "null"] },
+    "nickname": { "type": ["string", "null"] },
+    "logoId": { "type": ["string", "null"] },
+    "customLogo": {
+      "description": "Platform-specific custom logo reference. Android may store a Uri, Web may store a data URL or blob id.",
+      "type": ["string", "null"]
+    },
+    "logoDisabled": { "type": "boolean", "default": false },
+    "paletteColors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^#?[0-9A-Fa-f]{6}$"
+      }
+    },
+    "paletteAnalysis": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": { "enum": ["AutoCenter", "RectSelection", "PaintedMask"], "default": "AutoCenter" },
+        "rectNormalized": {
+          "type": ["object", "null"],
+          "properties": {
+            "left": { "type": "number", "minimum": 0, "maximum": 1 },
+            "top": { "type": "number", "minimum": 0, "maximum": 1 },
+            "right": { "type": "number", "minimum": 0, "maximum": 1 },
+            "bottom": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "paintedMaskStrokes": { "type": "array" }
+      }
+    },
+    "templateName": { "type": ["string", "null"] },
+    "renderStyle": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "usePaletteColorForCardBackground": { "type": "boolean", "default": false },
+        "paletteBackgroundColorIndex": { "type": "integer", "minimum": 0, "maximum": 4, "default": 0 }
+      }
+    },
+    "usePaletteColorForCardBackground": { "type": "boolean", "default": false },
+    "paletteBackgroundColorIndex": { "type": "integer", "minimum": 0, "maximum": 4, "default": 0 }
+  }
+}

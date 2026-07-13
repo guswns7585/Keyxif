@@ -1,0 +1,143 @@
+name: Android Release APK
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "KEYSTORE_BASE64 secret is missing." >&2
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" \
+            | tr -d '\r\n ' \
+            | base64 --decode \
+            > "$RUNNER_TEMP/keyxif-release.jks"
+
+          if [ ! -s "$RUNNER_TEMP/keyxif-release.jks" ]; then
+            echo "Decoded keystore is empty." >&2
+            exit 1
+          fi
+
+      - name: Make Gradle wrapper executable
+        working-directory: android
+        run: chmod +x ./gradlew
+
+      - name: Build signed release APK
+        working-directory: android
+        env:
+          CI: "true"
+          KEYSTORE_FILE: ${{ runner.temp }}/keyxif-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts | head -n 1)
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' android/app/build.gradle.kts | head -n 1)
+
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "Could not read app version." >&2
+            exit 1
+          fi
+
+          if [ ! -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            echo "Release APK was not generated." >&2
+            exit 1
+          fi
+
+          TAG_NAME="${GITHUB_REF_NAME}"
+          APK_NAME="keyxif-${VERSION_NAME}.apk"
+
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload verification APK
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyxif-release-verification
+          path: ${{ steps.version.outputs.apk_name }}
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Keyxif ${{ steps.version.outputs.version_name }}
+          body_path: docs/release-template.md
+          files: ${{ steps.version.outputs.apk_name }}
+
+      - name: Generate update.json
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          OWNER_REPO="${GITHUB_REPOSITORY}"
+          VERSION_NAME="${{ steps.version.outputs.version_name }}"
+          VERSION_CODE="${{ steps.version.outputs.version_code }}"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          APK_NAME="${{ steps.version.outputs.apk_name }}"
+
+          mkdir -p docs
+
+          cat > docs/update.json <<EOF
+          {
+            "latestVersionCode": ${VERSION_CODE},
+            "latestVersionName": "${VERSION_NAME}",
+            "minRequiredVersionCode": 1,
+            "title": "새 버전이 있습니다",
+            "message": "GitHub Releases에서 새 Keyxif APK를 받을 수 있습니다.",
+            "apkUrl": "https://github.com/${OWNER_REPO}/releases/download/${TAG_NAME}/${APK_NAME}",
+            "releaseNoteUrl": "https://github.com/${OWNER_REPO}/releases/tag/${TAG_NAME}",
+            "forceUpdate": false
+          }
+          EOF
+
+      - name: Commit update.json
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/update.json
+
+          if git diff --cached --quiet; then
+            echo "docs/update.json is already up to date."
+          else
+            git commit -m "Update release metadata for ${{ steps.version.outputs.tag_name }}"
+            git push origin HEAD:main
+          fi

@@ -1,99 +1,157 @@
 # Keyxif
 
-Keyxif is a native Android app built with Kotlin and Jetpack Compose. It turns keyboard photos into share-ready build cards, saves WEBP/PNG results to `Pictures/Keyxif`, and keeps a local metadata gallery of finished exports.
+Keyxif is a monorepo for the native Android app and the browser-based Web version. Both apps make keyboard photos into share-ready build images, but they are built, released, and deployed independently.
 
-## Build And Run
+## Projects
 
-1. Open this folder in Android Studio.
-2. Sync Gradle dependencies.
-3. Run the `app` configuration on Android API 26 or newer.
+- `android/`: Kotlin + Jetpack Compose Android app for APK distribution.
+- `web/`: static HTML/CSS/JavaScript Web app for browser use and Cloudflare Pages deployment.
+- `shared/`: common schemas, template specs, brand notes, and source asset guidelines.
+- `docs/`: release metadata, update JSON files, and release notes.
+- `scripts/`: release/build entry points for Android and Web.
 
-The app uses Kotlin, Jetpack Compose, Material 3, Coil, DataStore, WorkManager, and AndroidX EXIF.
+## Structure
 
-## Release Flow
+```text
+Keyxif/
+  android/
+    app/
+    build.gradle.kts
+    settings.gradle.kts
+    gradlew
+    gradlew.bat
+  web/
+    package.json
+    index.html
+    data/
+    scripts/
+    dist/
+  shared/
+    assets/
+      logos/
+      icons/
+      sample-images/
+    templates/
+      template-specs.json
+    schema/
+      keyxif-build-info.schema.json
+      exported-image.schema.json
+    docs/
+      brand-guidelines.md
+  docs/
+    update.json
+    web-update.json
+    release-template.md
+  scripts/
+    release-android.ps1
+    release-android.sh
+    release-web.ps1
+    release-web.sh
+  .github/
+    workflows/
+      android-release.yml
+      web-deploy.yml
+```
 
-Keyxif can be distributed outside the Play Store through signed APKs on GitHub Releases.
+## Android
 
-Required GitHub Secrets:
+```powershell
+cd android
+.\gradlew.bat :app:assembleDebug
+```
+
+The Android app keeps its package name, signing setup, local update checker, template rendering, and finished image gallery under `android/app`.
+
+Android release metadata stays in root `docs/update.json` because the installed app reads that public URL.
+
+Release helper:
+
+```powershell
+.\scripts\release-android.ps1 -VersionName 1.0.4 -VersionCode 5 -OwnerRepo guswns7585/keyxif
+```
+
+GitHub Actions workflow:
+
+- `.github/workflows/android-release.yml`
+- Trigger: tag push matching `v*.*.*` or manual dispatch
+- Runs Gradle inside `android/`
+- Builds a signed APK, creates a GitHub Release, uploads the APK, and updates `docs/update.json`
+
+Required Android release secrets:
 
 - `KEYSTORE_BASE64`
 - `KEYSTORE_PASSWORD`
 - `KEY_ALIAS`
 - `KEY_PASSWORD`
 
-The release APK must use the same `applicationId` and the same signing key as the installed app. Android will reject update installs if the signing key differs.
+## Web
 
-Release steps:
-
-1. Bump `versionCode` and `versionName`.
-2. Update release notes in `docs/release-template.md`.
-3. Run `scripts/release.ps1 -VersionName 1.1.0 -VersionCode 2 -OwnerRepo owner/keyxif` on Windows, or `scripts/release.sh 1.1.0 2 owner/keyxif` on macOS/Linux.
-4. Push the generated tag, for example `v1.1.0`.
-5. GitHub Actions workflow `Release APK` builds `assembleRelease`, signs the APK from Secrets, creates a GitHub Release, uploads `keyxif-${versionName}.apk`, and regenerates `docs/update.json`.
-
-`docs/update.json` fields:
-
-- `latestVersionCode`
-- `latestVersionName`
-- `minRequiredVersionCode`
-- `title`
-- `message`
-- `apkUrl`
-- `releaseNoteUrl`
-- `forceUpdate`
-
-`BuildConfig.UPDATE_JSON_URL` points to the app's default update metadata URL. Replace the placeholder repository URL in `app/build.gradle.kts` before publishing.
-
-## Self Update
-
-The app checks `update.json` once per day on launch and any time the user presses "업데이트 확인" in Settings.
-
-When a newer version is available:
-
-1. The app shows the update dialog.
-2. "지금 업데이트" downloads the APK with WorkManager into the app cache under `updates/`.
-3. Progress is shown in the app and, when notification permission is available, in the `keyxif_update` notification channel.
-4. After download, the app opens Android's package installer using `FileProvider`.
-5. The user must approve installation manually.
-
-Android 8.0+ may require "install unknown apps" permission for Keyxif. If permission is missing, the app opens the system settings screen for this source.
-
-Fallback behavior:
-
-- Network, JSON, or download failures are shown without blocking app use.
-- If package installer launch fails, the app falls back to opening `apkUrl` in the browser.
-- Silent/unattended APK installation is intentionally not implemented.
-
-## Finished Image Gallery
-
-The "완성 이미지" screen shows images that were successfully exported by Keyxif.
-
-- Result files remain in `Pictures/Keyxif`.
-- The app stores only metadata in DataStore: URI, file name, size, template, build info, and palette colors.
-- Individual save and batch save record only successful exports.
-- The gallery uses a lazy thumbnail grid and Coil image loading.
-- Detail view supports Android Sharesheet sharing, opening in the system gallery, removing only the app record, or deleting the actual file after confirmation.
-- If a file was deleted outside Keyxif, Settings can prune inaccessible records.
-
-## Project Layout
-
-```text
-.github/workflows/        GitHub Release APK automation
-docs/                     update.json and release note templates
-scripts/                  local release helper scripts
-app/src/main/java/com/keyxif/app/
-  data/
-    exported/             Finished export metadata repository
-    presets/              Built-in preset and logo data
-    repository/           App settings, draft, preset, recent data
-    update/               update.json fetch and APK download worker
-  domain/
-    analysis/             Photo palette extraction
-    export/               MediaStore export worker and payloads
-    model/                App models and enums
-    renderer/             Canvas template rendering
-  ui/
-    components/           Compose components and previews
-    screens/              Main app, export, settings, gallery screens
-  util/                   Bitmap, intent, and filename helpers
+```powershell
+cd web
+npm install
+npm run dev
+npm run build
+npm run preview
 ```
+
+The Web version is static and does not require Android to build. `npm run build` creates `web/dist`.
+
+Web deploy helper:
+
+```powershell
+.\scripts\release-web.ps1 -VersionName 0.1.0
+```
+
+GitHub Actions workflow:
+
+- `.github/workflows/web-deploy.yml`
+- Trigger: `main` push touching `web/**`, `shared/**`, or manual dispatch
+- Runs `npm ci` and `npm run build` inside `web/`
+- Deploys `web/dist` to Cloudflare Pages with Wrangler when Cloudflare secrets are present
+
+Required Web deploy secrets for GitHub Actions:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_PAGES_PROJECT_NAME`
+
+## Cloudflare Pages
+
+For the simplest Cloudflare setup, connect the GitHub repository directly in Cloudflare Pages and use:
+
+- Root directory: `web`
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Production branch: `main`
+
+Cloudflare Pages Git integration automatically builds and deploys when the connected branch changes. If you use the GitHub Actions workflow instead, create a Pages project first and add the three Cloudflare secrets listed above.
+
+Official references:
+
+- https://developers.cloudflare.com/pages/get-started/git-integration/
+- https://developers.cloudflare.com/pages/configuration/build-configuration/
+- https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/
+
+## Shared Rules
+
+- Android must not require a Web build.
+- Web must not require an Android build.
+- Keep shared code sharing conservative: common schemas, template specs, asset naming rules, and documentation only.
+- Treat `shared/schema` as the reference for portable build/export metadata.
+- Update `shared/templates/template-specs.json` before adding a public template to either platform.
+- Keep platform-specific generated resources in each platform folder.
+
+## Versioning
+
+- Android version: `android/app/build.gradle.kts` `versionCode` / `versionName`
+- Android release tag: keep the existing `v1.0.4` style
+- Web version: `web/package.json` `version`
+- Web release tag, if needed: `web-v0.1.0`
+- Android update metadata: `docs/update.json`
+- Optional Web metadata: `docs/web-update.json`
+
+## Licenses And Notices
+
+Open-source library notices should be shown inside each app's settings/about surface or documented in platform README files.
+
+Third-party vendor names and logos can have trademark or copyright restrictions. Do not add redistributable brand marks to `shared/assets` or platform resources unless permission is clear.

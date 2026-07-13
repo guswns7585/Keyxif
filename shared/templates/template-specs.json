@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "PlainExport",
+      "displayName": "Plain Export",
+      "description": "Export the source photo without decorative card treatment.",
+      "infoPosition": "none or optional overlay by platform setting",
+      "logoPosition": "none",
+      "supportsPaletteChips": false,
+      "backgroundTone": "mixed",
+      "plainExport": true,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "ClassicFrame",
+      "displayName": "클래식 프레임",
+      "description": "Photo with a bottom information bar.",
+      "infoPosition": "bottom bar",
+      "logoPosition": "bottom left",
+      "supportsPaletteChips": true,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "MinimalCaption",
+      "displayName": "미니멀 캡션",
+      "description": "Minimal caption area below the photo.",
+      "infoPosition": "bottom caption",
+      "logoPosition": "bottom right",
+      "supportsPaletteChips": false,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "BottomSpecBar",
+      "displayName": "하단 스펙 바",
+      "description": "Compact build specs along a thin bottom bar.",
+      "infoPosition": "bottom bar",
+      "logoPosition": "none",
+      "supportsPaletteChips": true,
+      "backgroundTone": "dark",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "CornerMark",
+      "displayName": "코너 마크",
+      "description": "Small logo and housing mark near a photo corner.",
+      "infoPosition": "corner mark",
+      "logoPosition": "inside corner mark",
+      "supportsPaletteChips": false,
+      "backgroundTone": "dark",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "PosterMargin",
+      "displayName": "포스터 마진",
+      "description": "Editorial poster-like margins around the photo.",
+      "infoPosition": "bottom margin",
+      "logoPosition": "bottom right",
+      "supportsPaletteChips": false,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "DarkGlassStrip",
+      "displayName": "다크 글래스 스트립",
+      "description": "Dark translucent strip with build details.",
+      "infoPosition": "bottom strip",
+      "logoPosition": "bottom left",
+      "supportsPaletteChips": true,
+      "backgroundTone": "dark",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "SideSpecRail",
+      "displayName": "사이드 스펙 레일",
+      "description": "Vertical side rail for logo and build specs.",
+      "infoPosition": "right rail",
+      "logoPosition": "top of right rail",
+      "supportsPaletteChips": true,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "TopNameplate",
+      "displayName": "상단 네임플레이트",
+      "description": "Nameplate above the photo.",
+      "infoPosition": "top header",
+      "logoPosition": "top left",
+      "supportsPaletteChips": true,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "MuseumMat",
+      "displayName": "뮤지엄 매트",
+      "description": "Wide mat border with gallery-like label.",
+      "infoPosition": "bottom label",
+      "logoPosition": "bottom right",
+      "supportsPaletteChips": false,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "CompactTicket",
+      "displayName": "컴팩트 티켓",
+      "description": "Ticket label under the photo.",
+      "infoPosition": "bottom ticket",
+      "logoPosition": "ticket left",
+      "supportsPaletteChips": true,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
+      "id": "CleanSignature",
+      "displayName": "클린 시그니처",
+      "description": "Clean lower signature with selected build details.",
+      "infoPosition": "bottom signature",
+      "logoPosition": "bottom right",
+      "supportsPaletteChips": true,
+      "backgroundTone": "light",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    }
+  ]
+}

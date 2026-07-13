@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keyxif.local/schema/exported-image.schema.json",
+  "title": "KeyxifExportedImage",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "uri", "createdAt", "templateName"],
+  "properties": {
+    "id": { "type": "string" },
+    "uri": { "type": "string" },
+    "displayName": { "type": ["string", "null"] },
+    "createdAt": { "type": "integer" },
+    "templateName": { "type": "string" },
+    "housing": { "type": ["string", "null"] },
+    "switchName": { "type": ["string", "null"] },
+    "plate": { "type": ["string", "null"] },
+    "mount": { "type": ["string", "null"] },
+    "keycap": { "type": ["string", "null"] },
+    "nickname": { "type": ["string", "null"] },
+    "paletteColors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^#?[0-9A-Fa-f]{6}$"
+      }
+    }
+  }
+}

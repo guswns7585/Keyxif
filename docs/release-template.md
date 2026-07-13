@@ -1,10 +1,11 @@
 ## Keyxif Release
 
 ### Changes
-- Add gallery grouping modes for housing, inferred brand, and dominant color group.
-- Add group cards with counts, preview thumbnails, and color chips for color groups.
-- Keep latest-first gallery behavior and existing share/open/delete flows inside grouped views.
-- Keep update installation stability improvements from 1.0.2.
+- Add per-photo Auto Center, Rectangle Selection, and Painted Mask palette analysis.
+- Add adjustable Auto Center ratio and freely resizable rectangle corner handles.
+- Add stable translucent mask painting, eraser, and stroke-by-stroke undo.
+- Add per-photo palette card backgrounds with automatic black/white text and logo contrast.
+- Keep Android and Web editing flows and draft persistence in sync.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.
