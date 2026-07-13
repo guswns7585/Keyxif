@@ -34,6 +34,7 @@ class UpdateDownloadWorker(
         createNotificationChannel()
         val apkUrl = inputData.getString(KEY_APK_URL).orEmpty()
         val versionName = inputData.getString(KEY_VERSION_NAME).orEmpty().ifBlank { "latest" }
+        val versionCode = inputData.getLong(KEY_VERSION_CODE, 0L)
         if (apkUrl.isBlank()) {
             return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "APK URL이 비어 있습니다."))
         }
@@ -42,13 +43,14 @@ class UpdateDownloadWorker(
             deleteRecursively()
             mkdirs()
         }
-        val apkFile = File(updateDir, "keyxif-update-$versionName.apk")
+        val apkFile = File(updateDir, "keyxif-update-$versionName-$versionCode-$id.apk")
 
         runCatching {
             setForeground(createForegroundInfo(0, "0%"))
             setProgress(progressData(0, null, null))
             download(apkUrl, apkFile)
             check(apkFile.length() > 0L) { "다운로드된 APK 파일이 비어 있습니다." }
+            validateDownloadedApk(apkFile, versionCode)
         }.onFailure { error ->
             postNotification("업데이트 다운로드 실패", error.message ?: "네트워크 상태를 확인해 주세요.", false)
             return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "업데이트 다운로드 실패")))
@@ -59,6 +61,8 @@ class UpdateDownloadWorker(
             workDataOf(
                 KEY_PROGRESS_PERCENT to 100,
                 KEY_APK_PATH to apkFile.absolutePath,
+                KEY_APK_URL to apkUrl,
+                KEY_VERSION_CODE to versionCode,
             ),
         )
     }
@@ -72,6 +76,8 @@ class UpdateDownloadWorker(
             readTimeout = 20_000
             requestMethod = "GET"
             useCaches = false
+            setRequestProperty("Cache-Control", "no-cache, no-store")
+            setRequestProperty("Pragma", "no-cache")
         }
         try {
             val statusCode = connection.responseCode
@@ -100,6 +106,26 @@ class UpdateDownloadWorker(
             }
         } finally {
             connection.disconnect()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun validateDownloadedApk(
+        apkFile: File,
+        expectedVersionCode: Long,
+    ) {
+        val packageInfo = applicationContext.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            ?: error("다운로드한 파일이 올바른 APK가 아닙니다.")
+        check(packageInfo.packageName == applicationContext.packageName) {
+            "다른 앱의 APK가 다운로드되었습니다."
+        }
+        val downloadedVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            packageInfo.versionCode.toLong()
+        }
+        check(expectedVersionCode <= 0L || downloadedVersionCode == expectedVersionCode) {
+            "다운로드한 APK 버전이 일치하지 않습니다. (예상 $expectedVersionCode, 실제 $downloadedVersionCode)"
         }
     }
 
@@ -185,6 +211,7 @@ class UpdateDownloadWorker(
         const val CHANNEL_NAME = "Keyxif Update"
         const val KEY_APK_URL = "apk_url"
         const val KEY_VERSION_NAME = "version_name"
+        const val KEY_VERSION_CODE = "version_code"
         const val KEY_PROGRESS_PERCENT = "progress_percent"
         const val KEY_APK_PATH = "apk_path"
         const val KEY_ERROR_MESSAGE = "error_message"
@@ -193,12 +220,14 @@ class UpdateDownloadWorker(
         fun request(
             apkUrl: String,
             versionName: String,
+            versionCode: Long,
         ): OneTimeWorkRequest {
             return OneTimeWorkRequestBuilder<UpdateDownloadWorker>()
                 .setInputData(
                     workDataOf(
                         KEY_APK_URL to apkUrl,
                         KEY_VERSION_NAME to versionName,
+                        KEY_VERSION_CODE to versionCode,
                     ),
                 )
                 .build()

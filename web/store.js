@@ -56,7 +56,7 @@
 
   var SAVE_LONG_SIDE_LIMIT = 4096;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.0.5-web';
+  var VERSION = '1.0.6-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */

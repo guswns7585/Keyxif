@@ -198,10 +198,12 @@ class KeyxifViewModel(
     fun openUpdateApk() {
         val info = uiState.value.updateCheckState.latestInfo ?: return
         uiState.value.updateDownloadState.downloadedApkPath?.let { path ->
-            if (File(path).exists()) {
+            if (isExpectedUpdateApk(path, info.latestVersionCode.toLong())) {
                 installDownloadedUpdate(path)
                 return
             }
+            File(path).delete()
+            _uiState.update { it.copy(updateDownloadState = UpdateDownloadState()) }
         }
         if (info.apkUrl.isBlank()) {
             _uiState.update { it.copy(uiMessage = "APK URL이 비어 있습니다.") }
@@ -210,6 +212,7 @@ class KeyxifViewModel(
         val request = UpdateDownloadWorker.request(
             apkUrl = info.apkUrl,
             versionName = info.latestVersionName,
+            versionCode = info.latestVersionCode.toLong(),
         )
         workManager.enqueueUniqueWork(
             UpdateDownloadWorker.UNIQUE_WORK_NAME,
@@ -1080,7 +1083,11 @@ class KeyxifViewModel(
         lastCompletedUpdateWorkId = finished.id
         if (finished.state == WorkInfo.State.SUCCEEDED) {
             val apkPath = finished.outputData.getString(UpdateDownloadWorker.KEY_APK_PATH)
-            if (!apkPath.isNullOrBlank() && File(apkPath).exists()) {
+            val expectedVersionCode = finished.outputData.getLong(UpdateDownloadWorker.KEY_VERSION_CODE, 0L)
+            if (expectedVersionCode > BuildConfig.VERSION_CODE.toLong() &&
+                !apkPath.isNullOrBlank() &&
+                isExpectedUpdateApk(apkPath, expectedVersionCode)
+            ) {
                 _uiState.update {
                     it.copy(
                         updateDownloadState = UpdateDownloadState(
@@ -1100,7 +1107,14 @@ class KeyxifViewModel(
         val output = info.outputData
         val apkPath = output.getString(UpdateDownloadWorker.KEY_APK_PATH)
         val error = output.getString(UpdateDownloadWorker.KEY_ERROR_MESSAGE)
-        if (info.state == WorkInfo.State.SUCCEEDED && !apkPath.isNullOrBlank()) {
+        val expectedVersionCode = output.getLong(UpdateDownloadWorker.KEY_VERSION_CODE, 0L)
+        val latestVersionCode = uiState.value.updateCheckState.latestInfo?.latestVersionCode?.toLong()
+        val matchesCurrentUpdate = latestVersionCode == null || latestVersionCode == expectedVersionCode
+        if (info.state == WorkInfo.State.SUCCEEDED &&
+            !apkPath.isNullOrBlank() &&
+            matchesCurrentUpdate &&
+            isExpectedUpdateApk(apkPath, expectedVersionCode)
+        ) {
             _uiState.update {
                 it.copy(
                     updateDownloadState = UpdateDownloadState(
@@ -1112,14 +1126,20 @@ class KeyxifViewModel(
                 )
             }
             installDownloadedUpdate(apkPath)
-        } else if (info.state == WorkInfo.State.FAILED || info.state == WorkInfo.State.CANCELLED) {
+        } else if (info.state.isFinished) {
+            apkPath?.let { File(it).delete() }
+            val failureMessage = error ?: if (!matchesCurrentUpdate) {
+                "이전에 받은 업데이트 파일을 폐기했습니다. 다시 다운로드해 주세요."
+            } else {
+                "다운로드한 APK의 버전을 확인할 수 없습니다. 다시 다운로드해 주세요."
+            }
             _uiState.update {
                 it.copy(
                     updateDownloadState = UpdateDownloadState(
                         isDownloading = false,
-                        errorMessage = error ?: "업데이트 다운로드가 실패했습니다.",
+                        errorMessage = failureMessage,
                     ),
-                    uiMessage = error ?: "업데이트 다운로드가 실패했습니다.",
+                    uiMessage = failureMessage,
                 )
             }
         }
@@ -1371,6 +1391,12 @@ class KeyxifViewModel(
                 .onSuccess { info ->
                     val requiresUpdate = info.latestVersionCode > BuildConfig.VERSION_CODE ||
                         info.minRequiredVersionCode > BuildConfig.VERSION_CODE
+                    val downloadedPath = uiState.value.updateDownloadState.downloadedApkPath
+                    val keepDownloadedApk = requiresUpdate && downloadedPath != null &&
+                        isExpectedUpdateApk(downloadedPath, info.latestVersionCode.toLong())
+                    if (downloadedPath != null && !keepDownloadedApk) {
+                        File(downloadedPath).delete()
+                    }
                     _uiState.update { state ->
                         state.copy(
                             updateCheckState = UpdateCheckState(
@@ -1384,6 +1410,11 @@ class KeyxifViewModel(
                                 },
                                 errorMessage = null,
                             ),
+                            updateDownloadState = if (downloadedPath == null || keepDownloadedApk) {
+                                state.updateDownloadState
+                            } else {
+                                UpdateDownloadState()
+                            },
                             showUpdateDialog = requiresUpdate,
                             uiMessage = if (manual && !requiresUpdate) "현재 최신 버전입니다." else state.uiMessage,
                         )
@@ -1472,6 +1503,18 @@ class KeyxifViewModel(
             _uiState.update { it.copy(uiMessage = "다운로드된 APK 파일을 찾을 수 없습니다.") }
             return
         }
+        val expectedVersionCode = uiState.value.updateCheckState.latestInfo?.latestVersionCode?.toLong()
+        if (expectedVersionCode == null || !isExpectedUpdateApk(apkPath, expectedVersionCode)) {
+            apkFile.delete()
+            _uiState.update {
+                it.copy(
+                    updateDownloadState = UpdateDownloadState(),
+                    uiMessage = "이전 업데이트 파일을 삭제하고 최신 APK를 다시 다운로드합니다.",
+                )
+            }
+            openUpdateApk()
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !app.packageManager.canRequestPackageInstalls()) {
             _uiState.update {
                 it.copy(
@@ -1508,6 +1551,25 @@ class KeyxifViewModel(
                 openUrl(fallbackUrl, "설치 화면을 열 수 없어 브라우저 다운로드로 전환합니다.")
             }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isExpectedUpdateApk(
+        apkPath: String,
+        expectedVersionCode: Long,
+    ): Boolean {
+        if (expectedVersionCode <= 0L) return false
+        val apkFile = File(apkPath)
+        if (!apkFile.isFile || apkFile.length() <= 0L) return false
+        val app = getApplication<Application>()
+        val packageInfo = app.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0) ?: return false
+        if (packageInfo.packageName != BuildConfig.APPLICATION_ID) return false
+        val apkVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            packageInfo.versionCode.toLong()
+        }
+        return apkVersionCode == expectedVersionCode
     }
 
     private fun grantApkReadPermission(
