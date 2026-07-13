@@ -124,6 +124,7 @@ object PresetData {
         "SUS",
         "Copper",
         "PEI",
+        "CF",
         "Non-Plate",
     )
 

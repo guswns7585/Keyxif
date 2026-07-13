@@ -1387,6 +1387,30 @@
     ctx.restore();
   }
 
+  function drawPhotoOverlayLogoIfNeeded(ctx, photoBounds, overlayImage) {
+    if (!overlayImage || imageWidth(overlayImage) <= 0 || imageHeight(overlayImage) <= 0) return;
+    var targetWidth = photoBounds.width() * 0.33;
+    var targetHeight = photoBounds.height() * 0.33;
+    var marginX = photoBounds.width() * 0.035;
+    var marginY = photoBounds.height() * 0.035;
+    var box = RectF(
+      photoBounds.right - targetWidth - marginX,
+      photoBounds.bottom - targetHeight - marginY,
+      photoBounds.right - marginX,
+      photoBounds.bottom - marginY
+    );
+    var target = logoFitInside(imageWidth(overlayImage), imageHeight(overlayImage), box, 'Center');
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(photoBounds.left, photoBounds.top, photoBounds.width(), photoBounds.height());
+    ctx.clip();
+    ctx.globalAlpha = 230 / 255;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(overlayImage, target.left, target.top, target.width(), target.height());
+    ctx.restore();
+  }
+
   function render(options) {
     var image = options.image;
     var buildInfo = options.buildInfo || {};
@@ -1430,7 +1454,8 @@
     fillRect(ctx, 0, 0, canvas.width, canvas.height, backgroundColor);
 
     // Photo placement into photoBounds with clipping
-    drawTemplatePhoto(ctx, image, templateRenderer.photoBounds(bounds), templateRenderer.photoPlacement());
+    var photoBounds = templateRenderer.photoBounds(bounds);
+    drawTemplatePhoto(ctx, image, photoBounds, templateRenderer.photoPlacement());
 
     // Logo resolution (customLogoUri -> customLogoImage; preset -> tone variant)
     var logoDisabled = !!buildInfo.logoDisabled;
@@ -1456,6 +1481,7 @@
       cardContentColor: readableContentColor(backgroundColor),
     };
 
+    drawPhotoOverlayLogoIfNeeded(ctx, photoBounds, logoDisabled ? null : inputAssets.photoOverlayImage);
     templateRenderer.draw(ctx, bounds, buildInfo, renderAssets, settings);
     return canvas;
   }

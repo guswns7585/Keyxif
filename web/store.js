@@ -56,7 +56,7 @@
 
   var SAVE_LONG_SIDE_LIMIT = 4096;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.0.4-web';
+  var VERSION = '1.0.5-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */
@@ -557,10 +557,12 @@
       if (!preset) return { logoImage: null, logoLabel: label, logoVariants: null, paletteColors: paletteColors };
       return Promise.all([
         logoImage(preset.drawable), logoImage(preset.blackDrawable), logoImage(preset.whiteDrawable),
+        logoImage(preset.photoOverlayDrawable),
       ]).then(function (imgs) {
         return {
           logoLabel: label,
           logoVariants: { default: imgs[0], black: imgs[1], white: imgs[2] },
+          photoOverlayImage: imgs[3],
           paletteColors: paletteColors,
         };
       });
@@ -581,6 +583,7 @@
           assets: {
             logoImage: assets.logoVariants ? null : (assets.logoImage || null),
             logoVariants: assets.logoVariants,
+            photoOverlayImage: assets.photoOverlayImage || null,
             logoLabel: assets.logoLabel,
             paletteColors: assets.paletteColors,
           },

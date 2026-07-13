@@ -162,7 +162,7 @@
   }
 
   /* ---- 정적 목록 (PresetData.kt) ---- */
-  var PLATES = ['Alu', 'PP', 'POM', 'PC', 'FR4', 'Brass', 'SUS', 'Copper', 'PEI', 'Non-Plate'];
+  var PLATES = ['Alu', 'PP', 'POM', 'PC', 'FR4', 'Brass', 'SUS', 'Copper', 'PEI', 'CF', 'Non-Plate'];
   var MOUNTS = ['Top-mount', 'Bottom-mount', 'Sandwich-mount', 'O-ring-mount', 'Gasket-mount', 'Leaf Spring-mount', 'Tadpole-mount'];
 
   window.KeyxifSearch = {

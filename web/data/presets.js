@@ -142,6 +142,24 @@ window.KEYXIF_PRESETS = {
     "Jjw",
     "JJW Concepts"
    ]
+  },
+  {
+   "id": "merisi",
+   "name": "Merisi",
+   "logoId": "merisi",
+   "aliases": []
+  },
+  {
+   "id": "orion",
+   "name": "Orion",
+   "logoId": "orion",
+   "aliases": []
+  },
+  {
+   "id": "kalam",
+   "name": "Kalam",
+   "logoId": "kalam",
+   "aliases": []
   }
  ],
  "housings": [
@@ -18319,6 +18337,33 @@ window.KEYXIF_PRESETS = {
    "aliases": [
     "Jjw"
    ]
+  },
+  {
+   "id": "merisi",
+   "name": "Merisi",
+   "drawable": null,
+   "whiteDrawable": "logo_merisi_w",
+   "blackDrawable": "logo_merisi_b",
+   "photoOverlayDrawable": null,
+   "aliases": ["Merisi"]
+  },
+  {
+   "id": "orion",
+   "name": "Orion",
+   "drawable": null,
+   "whiteDrawable": "logo_orion_w",
+   "blackDrawable": "logo_orion_b",
+   "photoOverlayDrawable": null,
+   "aliases": ["Orion"]
+  },
+  {
+   "id": "kalam",
+   "name": "Kalam",
+   "drawable": "logo_kalam",
+   "whiteDrawable": null,
+   "blackDrawable": null,
+   "photoOverlayDrawable": "logo_kalam",
+   "aliases": ["Kalam"]
   }
  ],
  "plates": [
@@ -18331,6 +18376,7 @@ window.KEYXIF_PRESETS = {
   "SUS",
   "Copper",
   "PEI",
+  "CF",
   "Non-Plate"
  ],
  "mounts": [

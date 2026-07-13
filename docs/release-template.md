@@ -1,11 +1,9 @@
 ## Keyxif Release
 
 ### Changes
-- Add per-photo Auto Center, Rectangle Selection, and Painted Mask palette analysis.
-- Add adjustable Auto Center ratio and freely resizable rectangle corner handles.
-- Add stable translucent mask painting, eraser, and stroke-by-stroke undo.
-- Add per-photo palette card backgrounds with automatic black/white text and logo contrast.
-- Keep Android and Web editing flows and draft persistence in sync.
+- Add Merisi, Orion, and Kalam logos to Keyxif Web.
+- Match Kalam's photo overlay rendering between Android and Web.
+- Add CF to the plate preset list on Android and Web.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

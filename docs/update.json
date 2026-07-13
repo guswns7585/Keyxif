@@ -1,10 +1,10 @@
 {
-  "latestVersionCode": 5,
-  "latestVersionName": "1.0.4",
+  "latestVersionCode": 6,
+  "latestVersionName": "1.0.5",
   "minRequiredVersionCode": 1,
-  "title": "새 버전이 있습니다",
-  "message": "GitHub Releases에서 새 Keyxif APK를 받을 수 있습니다.",
-  "apkUrl": "https://github.com/guswns7585/Keyxif/releases/download/v1.0.4/keyxif-1.0.4.apk",
-  "releaseNoteUrl": "https://github.com/guswns7585/Keyxif/releases/tag/v1.0.4",
+  "title": "Keyxif 1.0.5",
+  "message": "Merisi, Orion, Kalam logo support and the CF plate preset are now available.",
+  "apkUrl": "https://github.com/guswns7585/Keyxif/releases/download/v1.0.5/keyxif-1.0.5.apk",
+  "releaseNoteUrl": "https://github.com/guswns7585/Keyxif/releases/tag/v1.0.5",
   "forceUpdate": false
 }

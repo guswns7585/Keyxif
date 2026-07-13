@@ -14,6 +14,7 @@ const entries = [
   "ui-gallery.js",
   "ui-main.js",
   "ui-settings.js",
+  "assets",
   "data",
 ];
 
