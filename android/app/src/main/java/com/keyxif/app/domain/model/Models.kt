@@ -53,7 +53,13 @@ data class LogoPreset(
     val blackDrawableResId: Int? = null,
     val photoOverlayDrawableResId: Int? = null,
     val aliases: List<String> = emptyList(),
+    val colorPolicy: LogoColorPolicy = LogoColorPolicy.MANUAL_LIGHT_DARK,
 )
+
+enum class LogoColorPolicy {
+    AUTO_MONO_TINT,
+    MANUAL_LIGHT_DARK,
+}
 
 data class PhotoAnalysisResult(
     val paletteColors: List<Int> = emptyList(),
@@ -63,6 +69,7 @@ data class PhotoAnalysisResult(
     val analysisMode: PaletteAnalysisMode = PaletteAnalysisMode.AutoCenter,
     val analysisCenterCropRatio: Float = DEFAULT_PALETTE_CENTER_CROP_RATIO,
     val analysisRectNormalized: NormalizedRect? = null,
+    val analysisQuadNormalized: NormalizedQuad? = null,
     val paintedMaskStrokes: List<MaskStroke> = emptyList(),
 )
 
@@ -86,6 +93,31 @@ data class NormalizedRect(
     }
 }
 
+data class NormalizedQuad(
+    val topLeft: NormalizedPoint,
+    val topRight: NormalizedPoint,
+    val bottomRight: NormalizedPoint,
+    val bottomLeft: NormalizedPoint,
+) {
+    fun normalized(): NormalizedQuad = copy(
+        topLeft = topLeft.clamped(),
+        topRight = topRight.clamped(),
+        bottomRight = bottomRight.clamped(),
+        bottomLeft = bottomLeft.clamped(),
+    )
+
+    fun points(): List<NormalizedPoint> = listOf(topLeft, topRight, bottomRight, bottomLeft)
+}
+
+fun NormalizedPoint.clamped(): NormalizedPoint = copy(x = x.coerceIn(0f, 1f), y = y.coerceIn(0f, 1f))
+
+fun NormalizedRect.toQuad(): NormalizedQuad = NormalizedQuad(
+    topLeft = NormalizedPoint(left, top),
+    topRight = NormalizedPoint(right, top),
+    bottomRight = NormalizedPoint(right, bottom),
+    bottomLeft = NormalizedPoint(left, bottom),
+).normalized()
+
 data class MaskStroke(
     val points: List<NormalizedPoint>,
     val brushSizeNormalized: Float = 0.06f,
@@ -95,6 +127,10 @@ data class MaskStroke(
 data class PhotoRenderStyle(
     val usePaletteColorForCardBackground: Boolean = false,
     val paletteBackgroundColorIndex: Int = 0,
+    val customCardBackgroundColor: Int? = null,
+    val usePaletteColorForText: Boolean = false,
+    val paletteTextColorIndex: Int = 0,
+    val customTextColor: Int? = null,
 )
 
 data class PhotoItem(
@@ -381,6 +417,8 @@ fun defaultPaletteAnalysisRect(): NormalizedRect = NormalizedRect(
     right = 0.85f,
     bottom = 0.61f,
 )
+
+fun defaultPaletteAnalysisQuad(): NormalizedQuad = defaultPaletteAnalysisRect().toQuad()
 
 fun AppLanguageMode.displayName(): String = when (this) {
     AppLanguageMode.System -> "시스템"

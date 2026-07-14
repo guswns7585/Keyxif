@@ -5,14 +5,17 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import androidx.core.graphics.ColorUtils
 import com.keyxif.app.domain.model.MaskStroke
 import com.keyxif.app.domain.model.NormalizedRect
+import com.keyxif.app.domain.model.NormalizedQuad
 import com.keyxif.app.domain.model.PaletteAnalysisMode
 import com.keyxif.app.util.BitmapUtils
+import com.keyxif.app.domain.model.toQuad
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -24,6 +27,7 @@ class PhotoPaletteAnalyzer {
         maxColors: Int = MAX_COLORS,
         centerCropRatio: Float = DEFAULT_CENTER_CROP_RATIO,
         rectNormalized: NormalizedRect? = null,
+        quadNormalized: NormalizedQuad? = null,
         maskStrokes: List<MaskStroke> = emptyList(),
     ): List<Int> {
         val decoded = BitmapUtils.decodeOrientedBitmap(context, uri, ANALYSIS_LONG_SIDE)
@@ -32,11 +36,18 @@ class PhotoPaletteAnalyzer {
         return try {
             val source = when (mode) {
                 PaletteAnalysisMode.AutoCenter -> centerCrop(decoded, centerCropRatio).also { cropped = it }
-                PaletteAnalysisMode.RectSelection -> rectCrop(decoded, rectNormalized).also { cropped = it }
+                PaletteAnalysisMode.RectSelection -> decoded
                 PaletteAnalysisMode.PaintedMask -> decoded
             }
-            if (mode == PaletteAnalysisMode.PaintedMask) {
-                mask = createMask(decoded.width, decoded.height, maskStrokes)
+            mask = when (mode) {
+                PaletteAnalysisMode.RectSelection -> createQuadMask(
+                    decoded.width,
+                    decoded.height,
+                    quadNormalized ?: rectNormalized?.toQuad()
+                        ?: throw IllegalArgumentException("분석할 영역을 지정해 주세요."),
+                )
+                PaletteAnalysisMode.PaintedMask -> createMask(decoded.width, decoded.height, maskStrokes)
+                PaletteAnalysisMode.AutoCenter -> null
             }
             extractColors(source, maxColors.coerceIn(3, MAX_COLORS), mask)
         } finally {
@@ -59,13 +70,21 @@ class PhotoPaletteAnalyzer {
         )
     }
 
-    private fun rectCrop(bitmap: Bitmap, rect: NormalizedRect?): Bitmap {
-        val safe = (rect ?: throw IllegalArgumentException("분석할 사각형 영역을 지정해 주세요.")).normalized()
-        val left = (safe.left * bitmap.width).roundToInt().coerceIn(0, bitmap.width - 1)
-        val top = (safe.top * bitmap.height).roundToInt().coerceIn(0, bitmap.height - 1)
-        val right = (safe.right * bitmap.width).roundToInt().coerceIn(left + 1, bitmap.width)
-        val bottom = (safe.bottom * bitmap.height).roundToInt().coerceIn(top + 1, bitmap.height)
-        return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+    private fun createQuadMask(width: Int, height: Int, quad: NormalizedQuad): Bitmap {
+        val safe = quad.normalized()
+        val mask = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(mask)
+        val points = safe.points()
+        val path = Path().apply {
+            moveTo(points[0].x * width, points[0].y * height)
+            points.drop(1).forEach { lineTo(it.x * width, it.y * height) }
+            close()
+        }
+        canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        })
+        return mask
     }
 
     private fun createMask(width: Int, height: Int, strokes: List<MaskStroke>): Bitmap {

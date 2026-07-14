@@ -29,7 +29,7 @@
   var F_042 = fround(0.42);
   var F_072 = fround(0.72);
 
-  function analyze(image, mode, maxColors, centerCropRatio, rectNormalized, maskStrokes) {
+  function analyze(image, mode, maxColors, centerCropRatio, rectNormalized, quadNormalized, maskStrokes) {
     var mc = (typeof maxColors === 'number' && isFinite(maxColors)) ? Math.floor(maxColors) : MAX_COLORS;
     mc = Math.min(MAX_COLORS, Math.max(3, mc)); // maxColors.coerceIn(3, MAX_COLORS)
     var ratio = (typeof centerCropRatio === 'number' && isFinite(centerCropRatio))
@@ -38,10 +38,10 @@
 
     var decoded = decodeToCanvas(image);
     if (decoded === null) return [];
-    var source = mode === 'RectSelection'
-      ? rectCrop(decoded, rectNormalized)
-      : (mode === 'AutoCenter' ? centerCrop(decoded, ratio) : decoded);
-    var mask = mode === 'PaintedMask' ? createMask(decoded, maskStrokes || []) : null;
+    var source = mode === 'AutoCenter' ? centerCrop(decoded, ratio) : decoded;
+    var mask = mode === 'RectSelection'
+      ? createQuadMask(decoded, quadNormalized || rectToQuad(rectNormalized))
+      : (mode === 'PaintedMask' ? createMask(decoded, maskStrokes || []) : null);
     return extractColors(source, mc, mask);
   }
 
@@ -94,15 +94,29 @@
     return cropped;
   }
 
-  function rectCrop(canvas, rect) {
+  function rectToQuad(rect) {
     var r = rect || { left: 0.15, top: 0.39, right: 0.85, bottom: 0.61 };
-    var left = coerce(Math.round(coerce(Number(r.left) || 0, 0, 0.95) * canvas.width), 0, canvas.width - 1);
-    var top = coerce(Math.round(coerce(Number(r.top) || 0, 0, 0.95) * canvas.height), 0, canvas.height - 1);
-    var right = coerce(Math.round(coerce(Number(r.right) || 1, 0.05, 1) * canvas.width), left + 1, canvas.width);
-    var bottom = coerce(Math.round(coerce(Number(r.bottom) || 1, 0.05, 1) * canvas.height), top + 1, canvas.height);
-    var cropped = createCanvas(right - left, bottom - top);
-    context2d(cropped).drawImage(canvas, left, top, right - left, bottom - top, 0, 0, right - left, bottom - top);
-    return cropped;
+    return {
+      topLeft: { x: Number(r.left) || 0.15, y: Number(r.top) || 0.39 },
+      topRight: { x: Number(r.right) || 0.85, y: Number(r.top) || 0.39 },
+      bottomRight: { x: Number(r.right) || 0.85, y: Number(r.bottom) || 0.61 },
+      bottomLeft: { x: Number(r.left) || 0.15, y: Number(r.bottom) || 0.61 },
+    };
+  }
+
+  function createQuadMask(canvas, quad) {
+    var mask = createCanvas(canvas.width, canvas.height);
+    var ctx = context2d(mask);
+    var points = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft];
+    ctx.beginPath();
+    ctx.moveTo(coerce(Number(points[0].x), 0, 1) * canvas.width, coerce(Number(points[0].y), 0, 1) * canvas.height);
+    for (var i = 1; i < points.length; i++) {
+      ctx.lineTo(coerce(Number(points[i].x), 0, 1) * canvas.width, coerce(Number(points[i].y), 0, 1) * canvas.height);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    return mask;
   }
 
   function createMask(canvas, strokes) {

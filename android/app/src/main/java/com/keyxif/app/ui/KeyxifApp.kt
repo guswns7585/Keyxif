@@ -305,7 +305,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         onSelectPhoto = viewModel::selectPhoto,
                         onRenderStyleChange = viewModel::updateSelectedPhotoRenderStyle,
                         onAnalysisModeChange = viewModel::updateSelectedPhotoAnalysisMode,
-                        onAnalysisRectChange = viewModel::updateSelectedPhotoAnalysisRect,
+                        onAnalysisQuadChange = viewModel::updateSelectedPhotoAnalysisQuad,
                         onCenterRatioChange = viewModel::updateSelectedPhotoCenterRatio,
                         onMaskChange = viewModel::updateSelectedPhotoMask,
                         onReanalyze = viewModel::reanalyzeSelectedPalette,

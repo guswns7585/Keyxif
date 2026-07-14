@@ -4,6 +4,7 @@ import com.keyxif.app.R
 import com.keyxif.app.domain.model.HousingPreset
 import com.keyxif.app.domain.model.KeycapPreset
 import com.keyxif.app.domain.model.LogoPreset
+import com.keyxif.app.domain.model.LogoColorPolicy
 import com.keyxif.app.domain.model.SwitchPreset
 import com.keyxif.app.domain.model.VendorPreset
 
@@ -32,6 +33,21 @@ object PresetData {
         const val MERISI = "merisi"
         const val ORION = "orion"
         const val KALAM = "kalam"
+        const val REALFORCE = "realforce"
+        const val BOWL = "bowl"
+        const val CANNONKEYS = "cannonkeys"
+        const val GOK = "gok"
+        const val GRAYSTUDIO = "graystudio"
+        const val HHKB = "hhkb"
+        const val MELETRIX = "meletrix"
+        const val NOVELKEYS = "novelkeys"
+        const val OMNITYPE = "omnitype"
+        const val PLEX = "plex"
+        const val SENSY = "sensy"
+        const val TYPFACE = "typface"
+        const val WUQUE = "wuque"
+        const val FOX = "fox"
+        const val NEO = "neo"
     }
 
     object VendorIds {
@@ -61,15 +77,15 @@ object PresetData {
 
     val logos = listOf(
         logo(LogoIds.KEYXIF, "Keyxif", default = R.drawable.ic_keyxif, aliases = arrayOf("Keyxif")),
-        logo(LogoIds.QWERTYKEYS, "Qwertykeys", default = R.drawable.logo_qwertykeys, aliases = arrayOf("QK", "Neo Studio", "Neo")),
+        logo(LogoIds.QWERTYKEYS, "Qwertykeys", default = R.drawable.logo_qwertykeys, aliases = arrayOf("QK", "Neo Studio", "Neo"), colorPolicy = LogoColorPolicy.AUTO_MONO_TINT),
         logo(LogoIds.GEON, "Geonworks", white = R.drawable.logo_geon_w, black = R.drawable.logo_geon_b, aliases = arrayOf("Geon", "Geonworks")),
         logo(LogoIds.MODE, "Mode", white = R.drawable.logo_mode_w, black = R.drawable.logo_mode_b, aliases = arrayOf("Mode Designs", "Mode")),
 //        logo(LogoIds.OWLAB, "Owlab", R.drawable.logo_owlab, "OWL", "Owlab"),
         logo(LogoIds.TGR, "TGR", white = R.drawable.logo_tgr_w, black = R.drawable.logo_tgr_b, aliases = arrayOf("TGR")),
-        logo(LogoIds.KEYCULT, "Keycult", default = R.drawable.logo_keycult, aliases = arrayOf("Keycult")),
+        logo(LogoIds.KEYCULT, "Keycult", white = R.drawable.logo_keycult_w, black = R.drawable.logo_keycult_b, aliases = arrayOf("Keycult")),
         logo(LogoIds.SINGAKBD, "SingaKBD", white = R.drawable.logo_singakbd_w, black = R.drawable.logo_singakbd_b, aliases = arrayOf("Singa", "SingaKBD")),
 //        logo(LogoIds.TKD, "TKD", R.drawable.logo_tkd, "TheKeyDotCo", "TKD"),
-        logo(LogoIds.MATRIX, "Matrix Lab", white = R.drawable.logo_matrix_w, black = R.drawable.logo_matrix_b, aliases = arrayOf("Matrix", "Matrix Lab")),
+        logo(LogoIds.MATRIX, "Matrix Lab", white = R.drawable.logo_matrix_w, black = R.drawable.logo_matrix_b, aliases = arrayOf("Matrix", "Matrix Lab", "MatrixLab")),
         logo(LogoIds.SWAGKEY, "Swagkey", white = R.drawable.logo_swagkey_w, black = R.drawable.logo_swagkey_b, aliases = arrayOf("Swagkey", "Swagkey")),
         logo(LogoIds.KLC, "KLC", white = R.drawable.logo_klc_w, black = R.drawable.logo_klc_b, aliases = arrayOf("Klc", "Klc")),
         logo(LogoIds.SYRYAN, "Syryan", white = R.drawable.logo_syryan_w, black = R.drawable.logo_syryan_b, aliases = arrayOf("Syryan", "Syryan")),
@@ -84,7 +100,23 @@ object PresetData {
         logo(LogoIds.MERISI, "Merisi", white = R.drawable.logo_merisi_w, black = R.drawable.logo_merisi_b, aliases = arrayOf("Merisi")),
         logo(LogoIds.ORION, "Orion", white = R.drawable.logo_orion_w, black = R.drawable.logo_orion_b, aliases = arrayOf("Orion")),
         logo(LogoIds.KALAM, "Kalam", default = R.drawable.logo_kalam, overlay = R.drawable.logo_kalam, aliases = arrayOf("Kalam")),
-    )
+        logo(LogoIds.REALFORCE, "REALFORCE", white = R.drawable.logo_realforce_w, black = R.drawable.logo_realforce_b, aliases = arrayOf("Realforce", "Topre", "리얼포스", "토프레")),
+        logo(LogoIds.BOWL, "Bowl Keyboards", white = R.drawable.logo_bowl_w, black = R.drawable.logo_bowl_b, aliases = arrayOf("Bowl", "볼키보드")),
+        logo(LogoIds.CANNONKEYS, "CannonKeys", default = R.drawable.logo_cannonkeys, aliases = arrayOf("Cannon", "CK", "캐논키")),
+        logo(LogoIds.GOK, "GOK Designs", white = R.drawable.logo_gok_w, black = R.drawable.logo_gok_b, aliases = arrayOf("GOK", "곡디자인")),
+        logo(LogoIds.GRAYSTUDIO, "Graystudio", white = R.drawable.logo_graystudio_w, black = R.drawable.logo_graystudio_b, aliases = arrayOf("Gray", "그레이스튜디오")),
+        logo(LogoIds.HHKB, "HHKB", default = R.drawable.logo_hhkb, aliases = arrayOf("Happy Hacking", "Topre", "토프레")),
+        logo(LogoIds.MELETRIX, "Meletrix", white = R.drawable.logo_meletrix_w, black = R.drawable.logo_meletrix_b, aliases = arrayOf("멜레트릭스", "Zoom")),
+        logo(LogoIds.NOVELKEYS, "NovelKeys", default = R.drawable.logo_novelkeys, aliases = arrayOf("NK", "노벨키")),
+        logo(LogoIds.OMNITYPE, "Omnitype", default = R.drawable.logo_omnitype, aliases = arrayOf("옴니타입")),
+        logo(LogoIds.PLEX, "Plexkbd", white = R.drawable.logo_plex_w, black = R.drawable.logo_plex_b, aliases = arrayOf("Plex", "플렉스")),
+        logo(LogoIds.SENSY, "SENSY", white = R.drawable.logo_sensy_w, black = R.drawable.logo_sensy_b, aliases = arrayOf("센시")),
+        logo(LogoIds.TYPFACE, "Typface", white = R.drawable.logo_typface_w, black = R.drawable.logo_typface_b, aliases = arrayOf("타입페이스")),
+        logo(LogoIds.WUQUE, "Wuque Studio", white = R.drawable.logo_wuque_w, black = R.drawable.logo_wuque_b, aliases = arrayOf("WS", "Wuque", "우케", "우크")),
+        logo(LogoIds.TKD, "TKD", white = R.drawable.logo_tkd_w, black = R.drawable.logo_tkd_b, aliases = arrayOf("TheKeyDotCo", "티케이디")),
+        logo(LogoIds.FOX, "FOX", default = R.drawable.logo_fox, aliases = arrayOf("Fox")),
+        logo(LogoIds.NEO, "Neo", white = R.drawable.logo_neo_w, black = R.drawable.logo_neo_b, aliases = arrayOf("Neo Studio", "Neo")),
+    ).sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
     val vendors = (
         listOf(
@@ -125,7 +157,7 @@ object PresetData {
         "Copper",
         "PEI",
         "CF",
-        "Non-Plate",
+        "Plateless",
     )
 
     val mounts = listOf(
@@ -213,7 +245,13 @@ object PresetData {
             aliases = listOf("Corsa"),
         ),
         ) + GeneratedPresetData.housings
-        ).distinctBy { it.housingKey() }
+        ).map { housing ->
+            if (housing.vendorId == VendorIds.QWERTYKEYS && housing.name.startsWith("Neo")) {
+                housing.copy(logoId = LogoIds.NEO)
+            } else {
+                housing
+            }
+        }.distinctBy { it.housingKey() }
 
     val keycaps = (
         listOf(
@@ -242,6 +280,7 @@ object PresetData {
         black: Int? = null,
         overlay: Int? = null,
         aliases: Array<String> = emptyArray(),
+        colorPolicy: LogoColorPolicy = LogoColorPolicy.MANUAL_LIGHT_DARK,
     ) = LogoPreset(
         id = id,
         name = name,
@@ -250,6 +289,7 @@ object PresetData {
         blackDrawableResId = black,
         photoOverlayDrawableResId = overlay,
         aliases = aliases.toList(),
+        colorPolicy = colorPolicy,
     )
 
     private fun vendor(

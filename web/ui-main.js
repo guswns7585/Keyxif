@@ -31,6 +31,7 @@
     presetNameInput: '',
     presetNamePhotoId: null,        // 사진 전환 시 프리셋명 리셋
     searchSheet: null,              // { field: 'housing'|'switch'|'keycap', query, hiddenRecents: {} }
+    logoSheet: null,                // { query }
     fullscreen: null,               // { index, scale, offsetX, offsetY }
     renderCache: {},                // key -> { status, dataUrl, retry }
     tplSketchCache: {},             // templateId -> dataURL
@@ -330,41 +331,16 @@
     });
     s6.appendChild(nick.wrap);
 
-    var logoRow = h('<div class="chip-row"></div>');
-    var autoSelected = !info.logoDisabled && info.logoId == null && !info.customLogoUri;
-    // 로고 없음
-    logoRow.appendChild(makeChip('로고 없음', info.logoDisabled, function () {
-      if (info.logoDisabled) setInfo(actions, info, { logoDisabled: false });
-      else setInfo(actions, info, { logoId: null, customLogoUri: null, logoDisabled: true });
-    }));
-    // 자동
-    logoRow.appendChild(makeChip('자동', autoSelected, function () {
-      if (autoSelected) setInfo(actions, info, { logoId: null, customLogoUri: null, logoDisabled: true });
-      else setInfo(actions, info, { logoId: null, customLogoUri: null, logoDisabled: false });
-    }));
-    // 내장 로고들
-    window.KeyxifSearch.logos.forEach(function (logo) {
-      var on = !info.logoDisabled && info.logoId === logo.id;
-      logoRow.appendChild(makeChip(esc(logo.name), on, function () {
-        if (on) setInfo(actions, info, { logoId: null, logoDisabled: true });
-        else setInfo(actions, info, { logoId: logo.id, customLogoUri: null, logoDisabled: false });
-      }));
-    });
-    // 로고 업로드 / 사용자 로고
     var hasCustom = !!info.customLogoUri;
-    var upChip = makeChip((hasCustom ? '사용자 로고' : '로고 업로드'), hasCustom && !info.logoDisabled, function () {
-      if (hasCustom) setInfo(actions, info, { customLogoUri: null, logoDisabled: true });
-      else {
-        var inp = document.createElement('input');
-        inp.type = 'file'; inp.accept = 'image/*';
-        inp.addEventListener('change', function () {
-          if (inp.files && inp.files[0]) actions.uploadCustomLogo(inp.files[0]);
-        });
-        inp.click();
-      }
-    }, ICONS.upload);
-    logoRow.appendChild(upChip);
-    s6.appendChild(logoRow);
+    var logoLabel = info.logoDisabled ? '로고 없음' : (hasCustom ? '사용자 로고' : '자동 (하우징 기준)');
+    if (!info.logoDisabled && !hasCustom && info.logoId) {
+      var selectedLogo = window.KeyxifSearch.logoById(info.logoId);
+      logoLabel = selectedLogo ? selectedLogo.name : info.logoId;
+    }
+    var logoButton = h('<button class="btn btn-outlined full" style="justify-content:space-between"><span class="ellipsis-1">로고: ' +
+      esc(logoLabel) + '</span>' + ICONS.down + '</button>');
+    logoButton.addEventListener('click', function () { ui.logoSheet = { query: '' }; notify(); });
+    s6.appendChild(logoButton);
 
     if (hasCustom && !info.logoDisabled) {
       var cUrl = helpers.getObjectURL(info.customLogoUri);
@@ -388,6 +364,73 @@
     }
     // ---- 검색 바텀시트
     if (ui.searchSheet) container.appendChild(buildSearchSheet(state, actions, helpers));
+    if (ui.logoSheet) container.appendChild(buildLogoSheet(state, actions, helpers));
+  }
+
+  function buildLogoSheet(state, actions, helpers) {
+    var esc = helpers.esc;
+    var sel = window.KeyxifStore.selectedPhoto();
+    var info = sel ? sel.buildInfo : defaultInfo();
+    var scrim = h('<div class="sheet-scrim"></div>');
+    var sheet = h('<div class="sheet"><div class="sheet-handle"></div><div class="title-large">로고 선택</div></div>');
+    var search = buildField({
+      label: '로고 검색', placeholder: '브랜드명으로 검색', value: ui.logoSheet.query,
+      dataKey: 'logo-sheet-q', onInput: function (value) { ui.logoSheet.query = value; refresh(); },
+    });
+    sheet.appendChild(search.wrap);
+
+    var options = h('<div class="chip-row"></div>');
+    var autoSelected = !info.logoDisabled && info.logoId == null && !info.customLogoUri;
+    options.appendChild(makeChip('로고 없음', info.logoDisabled, function () {
+      commit({ logoId: null, customLogoUri: null, logoDisabled: true });
+    }));
+    options.appendChild(makeChip('자동', autoSelected, function () {
+      commit({ logoId: null, customLogoUri: null, logoDisabled: false });
+    }));
+    options.appendChild(makeChip(info.customLogoUri ? '사용자 로고 변경' : '로고 업로드', false, function () {
+      var input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*';
+      input.addEventListener('change', function () {
+        if (input.files && input.files[0]) { ui.logoSheet = null; actions.uploadCustomLogo(input.files[0]); }
+      });
+      input.click();
+    }, ICONS.upload));
+    sheet.appendChild(options);
+    sheet.appendChild(h('<div class="label-medium muted">내장 로고</div>'));
+    var grid = h('<div class="sheet-list logo-grid"></div>');
+    sheet.appendChild(grid);
+
+    function commit(patch) { ui.logoSheet = null; setInfo(actions, info, patch); }
+    function refresh() {
+      var query = window.KeyxifSearch.normalize(ui.logoSheet.query);
+      grid.innerHTML = '';
+      var list = window.KeyxifSearch.logos.filter(function (logo) {
+        var haystack = window.KeyxifSearch.normalize([logo.name].concat(logo.aliases || []).join(' '));
+        return !query || haystack.indexOf(query) >= 0;
+      });
+      if (!list.length) {
+        grid.appendChild(h('<div class="body-medium muted" style="grid-column:1/-1;padding:12px 4px">검색 결과가 없습니다.</div>'));
+        return;
+      }
+      list.forEach(function (logo) {
+        var selected = !info.logoDisabled && info.logoId === logo.id;
+        var assetKey = logo.drawable || logo.blackDrawable || logo.whiteDrawable;
+        var uri = (window.KEYXIF_ASSETS && window.KEYXIF_ASSETS[assetKey]) || '';
+        var tile = h('<button class="logo-tile' + (selected ? ' selected' : '') + '"><div class="logo-tile-img">' +
+          (uri ? '<img src="' + uri + '" alt="' + esc(logo.name) + '">' : '') + '</div><span class="logo-tile-name ellipsis-1">' +
+          esc(logo.name) + '</span></button>');
+        tile.addEventListener('click', function () {
+          commit({ logoId: selected ? null : logo.id, customLogoUri: null, logoDisabled: selected });
+        });
+        grid.appendChild(tile);
+      });
+    }
+    refresh();
+    scrim.addEventListener('click', function (event) {
+      if (event.target === scrim) { ui.logoSheet = null; notify(); }
+    });
+    scrim.appendChild(sheet);
+    return scrim;
   }
 
   function defaultInfo() {
@@ -793,6 +836,55 @@
   /* =====================================================================
      3.5 PaletteScreen
      ===================================================================== */
+  function normalizeHexColor(value) {
+    var match = String(value || '').trim().match(/^#?([0-9a-f]{6})$/i);
+    return match ? '#' + match[1].toUpperCase() : null;
+  }
+
+  function buildCustomColorControl(label, selectedColor, fallbackColor, onSelect) {
+    var selected = normalizeHexColor(selectedColor);
+    var value = selected || fallbackColor;
+    var control = h(
+      '<div class="custom-color-control' + (selected ? ' active' : '') + '">' +
+      '<div class="custom-color-head"><div><div class="label-small muted">사용자 지정</div><div class="label-large">' + label + '</div></div>' +
+      '<div class="body-small custom-color-state">' + (selected ? '현재 적용 · ' + selected : '직접 선택') + '</div></div>' +
+      '</div>'
+    );
+    var inputs = h('<div class="custom-color-inputs"></div>');
+    var picker = h('<input class="custom-color-picker" type="color" title="' + label + '" aria-label="' + label + ' 선택" value="' + value + '">');
+    var textInput = h('<input class="text-input custom-color-hex" type="text" inputmode="text" maxlength="7" aria-label="HEX 색상 코드" value="' + value + '" placeholder="#RRGGBB">');
+    var apply = h('<button class="btn ' + (selected ? 'btn-filled' : 'btn-outlined') + ' custom-color-apply">적용</button>');
+
+    function commit(raw) {
+      var normalized = normalizeHexColor(raw);
+      textInput.setCustomValidity(normalized ? '' : '#RRGGBB 형식으로 입력해 주세요.');
+      if (!normalized) {
+        textInput.reportValidity();
+        return;
+      }
+      picker.value = normalized;
+      textInput.value = normalized;
+      onSelect(normalized);
+    }
+
+    picker.addEventListener('input', function () {
+      textInput.value = picker.value.toUpperCase();
+    });
+    picker.addEventListener('change', function () { commit(picker.value); });
+    apply.addEventListener('click', function () { commit(textInput.value); });
+    textInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commit(textInput.value);
+      }
+    });
+    inputs.appendChild(picker);
+    inputs.appendChild(textInput);
+    inputs.appendChild(apply);
+    control.appendChild(inputs);
+    return control;
+  }
+
   function renderPalette(container, state, actions, helpers) {
     var root = document.createElement('div');
     root.className = 'screen';
@@ -801,6 +893,10 @@
     var renderStyle = (selected && selected.renderStyle) || {
       usePaletteColorForCardBackground: false,
       paletteBackgroundColorIndex: 0,
+      customCardBackgroundColor: null,
+      usePaletteColorForText: false,
+      paletteTextColorIndex: 0,
+      customTextColor: null,
     };
     var colors = analysis ? analysis.paletteColors || [] : [];
 
@@ -851,7 +947,7 @@
       image.addEventListener('load', setupEditor, { once: true });
       if (image.complete && image.naturalWidth > 0) setupEditor();
       else if (typeof image.decode === 'function') image.decode().then(setupEditor).catch(function () {});
-      if (analysis.analysisMode === 'RectSelection') bindRectEditor(canvas, analysis, actions, redrawEditor);
+      if (analysis.analysisMode === 'RectSelection') bindQuadEditor(canvas, analysis, actions, redrawEditor);
       if (analysis.analysisMode === 'PaintedMask') bindMaskEditor(canvas, analysis, actions, redrawEditor);
       modeCard.appendChild(stage);
 
@@ -866,10 +962,15 @@
         again.addEventListener('click', actions.reanalyzeSelectedPalette); controls.appendChild(again);
       } else if (analysis.analysisMode === 'RectSelection') {
         var centerButton = h('<button class="btn btn-outlined">중앙으로</button>');
-        centerButton.addEventListener('click', function () { actions.updateSelectedPhotoAnalysisRect(centerWebRect(analysis.analysisRectNormalized || defaultWebRect())); });
+        centerButton.addEventListener('click', function () {
+          actions.updateSelectedPhotoAnalysisQuad(centerWebQuad(analysis.analysisQuadNormalized || rectToWebQuad(analysis.analysisRectNormalized)));
+        });
         controls.appendChild(centerButton);
         var applyRect = h('<button class="btn btn-filled">적용</button>');
-        applyRect.addEventListener('click', actions.reanalyzeSelectedPalette); controls.appendChild(applyRect);
+        applyRect.addEventListener('click', function () {
+          actions.updateSelectedPhotoAnalysisQuad(analysis.analysisQuadNormalized || rectToWebQuad(analysis.analysisRectNormalized));
+          actions.reanalyzeSelectedPalette();
+        }); controls.appendChild(applyRect);
       } else if (analysis.analysisMode === 'PaintedMask') {
         var sizes = [['작게', 0.03], ['보통', 0.06], ['크게', 0.11]];
         ui.paletteBrushSize = ui.paletteBrushSize || 0.06;
@@ -897,23 +998,35 @@
     colorCard.appendChild(h('<div class="title-medium">사진별 카드 배경</div>'));
     if (!selected) {
       colorCard.appendChild(h('<div class="body-medium muted">먼저 사진을 추가해 주세요.</div>'));
-    } else if (!colors.length) {
-      colorCard.appendChild(h('<div class="body-medium muted">대표 색상을 분석 중이거나 추출된 색상이 없습니다.</div>'));
     } else {
-      var row = h('<div class="palette-row wrap"></div>');
-      colors.slice(0, state.settings.paletteColorCount).forEach(function (c, index) {
-        var picked = renderStyle.paletteBackgroundColorIndex === index;
-        var btn = h('<button class="chip' + (picked ? ' selected' : '') + '"><span class="color-dot" style="width:22px;height:22px;background:' + helpers.colorToCss(c) + '"></span>#' +
-          ((c >>> 0) & 0xffffff).toString(16).toUpperCase().padStart(6, '0') + '</button>');
-        btn.addEventListener('click', function () {
-          actions.updateSelectedPhotoRenderStyle(function (rs) {
-            rs.paletteBackgroundColorIndex = index;
-            return rs;
+      colorCard.appendChild(h('<div class="label-large">카드 배경 색상</div>'));
+      if (!colors.length) {
+        colorCard.appendChild(h('<div class="body-medium muted">대표 색상을 분석 중이거나 추출된 색상이 없습니다. 사용자 지정 색상은 바로 사용할 수 있습니다.</div>'));
+      } else {
+        var row = h('<div class="palette-row wrap"></div>');
+        colors.slice(0, state.settings.paletteColorCount).forEach(function (c, index) {
+          var picked = !renderStyle.customCardBackgroundColor && renderStyle.paletteBackgroundColorIndex === index;
+          var btn = h('<button class="chip' + (picked ? ' selected' : '') + '"><span class="color-dot" style="width:22px;height:22px;background:' + helpers.colorToCss(c) + '"></span>#' +
+            ((c >>> 0) & 0xffffff).toString(16).toUpperCase().padStart(6, '0') + '</button>');
+          btn.addEventListener('click', function () {
+            actions.updateSelectedPhotoRenderStyle(function (rs) {
+              rs.paletteBackgroundColorIndex = index;
+              rs.customCardBackgroundColor = null;
+              rs.usePaletteColorForCardBackground = true;
+              return rs;
+            });
           });
+          row.appendChild(btn);
         });
-        row.appendChild(btn);
-      });
-      colorCard.appendChild(row);
+        colorCard.appendChild(row);
+      }
+      colorCard.appendChild(buildCustomColorControl('사용자 지정 카드 배경', renderStyle.customCardBackgroundColor, '#FFFFFF', function (color) {
+        actions.updateSelectedPhotoRenderStyle(function (rs) {
+          rs.customCardBackgroundColor = color;
+          rs.usePaletteColorForCardBackground = true;
+          return rs;
+        });
+      }));
       var toggle = h('<label class="switch-row"><span><b>이 색상을 카드 배경으로 사용</b><br><span class="body-small muted">현재 선택한 사진에만 적용됩니다.</span></span><span class="switch"><input type="checkbox"' +
         (renderStyle.usePaletteColorForCardBackground ? ' checked' : '') + '><span class="track"></span><span class="thumb"></span></span></label>');
       toggle.querySelector('input').addEventListener('change', function (e) {
@@ -923,6 +1036,42 @@
         });
       });
       colorCard.appendChild(toggle);
+
+      colorCard.appendChild(h('<div class="label-large" style="margin-top:6px">텍스트 색상</div>'));
+      if (colors.length) {
+        var textRow = h('<div class="palette-row wrap"></div>');
+        colors.slice(0, state.settings.paletteColorCount).forEach(function (c, index) {
+          var picked = !renderStyle.customTextColor && renderStyle.paletteTextColorIndex === index;
+          var btn = h('<button class="chip' + (picked ? ' selected' : '') + '"><span class="color-dot" style="width:22px;height:22px;background:' + helpers.colorToCss(c) + '"></span>#' +
+            ((c >>> 0) & 0xffffff).toString(16).toUpperCase().padStart(6, '0') + '</button>');
+          btn.addEventListener('click', function () {
+            actions.updateSelectedPhotoRenderStyle(function (rs) {
+              rs.paletteTextColorIndex = index;
+              rs.customTextColor = null;
+              rs.usePaletteColorForText = true;
+              return rs;
+            });
+          });
+          textRow.appendChild(btn);
+        });
+        colorCard.appendChild(textRow);
+      }
+      colorCard.appendChild(buildCustomColorControl('사용자 지정 텍스트 색상', renderStyle.customTextColor, '#111111', function (color) {
+        actions.updateSelectedPhotoRenderStyle(function (rs) {
+          rs.customTextColor = color;
+          rs.usePaletteColorForText = true;
+          return rs;
+        });
+      }));
+      var textToggle = h('<label class="switch-row"><span><b>이 색상을 텍스트에 사용</b><br><span class="body-small muted">빌드 정보의 제목과 값을 같은 색상으로 표시합니다.</span></span><span class="switch"><input type="checkbox"' +
+        (renderStyle.usePaletteColorForText ? ' checked' : '') + '><span class="track"></span><span class="thumb"></span></span></label>');
+      textToggle.querySelector('input').addEventListener('change', function (event) {
+        actions.updateSelectedPhotoRenderStyle(function (rs) {
+          rs.usePaletteColorForText = event.target.checked;
+          return rs;
+        });
+      });
+      colorCard.appendChild(textToggle);
     }
     root.appendChild(colorCard);
     container.appendChild(root);
@@ -932,6 +1081,26 @@
   function centerWebRect(r) {
     var w = r.right - r.left, h = r.bottom - r.top;
     return { left: 0.5 - w / 2, top: 0.5 - h / 2, right: 0.5 + w / 2, bottom: 0.5 + h / 2 };
+  }
+  function rectToWebQuad(r) {
+    r = r || defaultWebRect();
+    return {
+      topLeft: { x: r.left, y: r.top }, topRight: { x: r.right, y: r.top },
+      bottomRight: { x: r.right, y: r.bottom }, bottomLeft: { x: r.left, y: r.bottom },
+    };
+  }
+  function webQuadPoints(quad) { return [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]; }
+  function translateWebQuad(quad, dx, dy) {
+    function move(p) { return { x: p.x + dx, y: p.y + dy }; }
+    return { topLeft: move(quad.topLeft), topRight: move(quad.topRight), bottomRight: move(quad.bottomRight), bottomLeft: move(quad.bottomLeft) };
+  }
+  function centerWebQuad(quad) {
+    var points = webQuadPoints(quad);
+    var centerX = points.reduce(function (sum, p) { return sum + p.x; }, 0) / points.length;
+    var centerY = points.reduce(function (sum, p) { return sum + p.y; }, 0) / points.length;
+    var dx = Math.min(1 - Math.max.apply(null, points.map(function (p) { return p.x; })), Math.max(-Math.min.apply(null, points.map(function (p) { return p.x; })), .5 - centerX));
+    var dy = Math.min(1 - Math.max.apply(null, points.map(function (p) { return p.y; })), Math.max(-Math.min.apply(null, points.map(function (p) { return p.y; })), .5 - centerY));
+    return translateWebQuad(quad, dx, dy);
   }
   function drawPaletteOverlay(canvas, analysis, image, previewStroke) {
     if (!canvas.width || !canvas.height || !image || !image.naturalWidth) return;
@@ -946,13 +1115,15 @@
       ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = Math.max(1.5, canvas.width / 480);
       ctx.strokeRect(autoLeft * canvas.width, autoTop * canvas.height, ratio * canvas.width, ratio * canvas.height);
     } else if (analysis.analysisMode === 'RectSelection') {
-      var r = analysis.analysisRectNormalized || defaultWebRect();
+      var quad = analysis.analysisQuadNormalized || rectToWebQuad(analysis.analysisRectNormalized);
+      var quadPoints = webQuadPoints(quad);
       ctx.fillStyle = 'rgba(0,200,255,.18)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, canvas.width / 320);
-      ctx.fillRect(r.left * canvas.width, r.top * canvas.height, (r.right - r.left) * canvas.width, (r.bottom - r.top) * canvas.height);
-      ctx.strokeRect(r.left * canvas.width, r.top * canvas.height, (r.right - r.left) * canvas.width, (r.bottom - r.top) * canvas.height);
-      [[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]].forEach(function (p) {
-        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(p[0] * canvas.width, p[1] * canvas.height, Math.max(8, canvas.width / 90), 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.fillStyle = '#0089a8'; ctx.arc(p[0] * canvas.width, p[1] * canvas.height, Math.max(5, canvas.width / 140), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(quadPoints[0].x * canvas.width, quadPoints[0].y * canvas.height);
+      for (var qp = 1; qp < quadPoints.length; qp++) ctx.lineTo(quadPoints[qp].x * canvas.width, quadPoints[qp].y * canvas.height);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      quadPoints.forEach(function (p) {
+        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(p.x * canvas.width, p.y * canvas.height, Math.max(8, canvas.width / 90), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.fillStyle = '#0089a8'; ctx.arc(p.x * canvas.width, p.y * canvas.height, Math.max(5, canvas.width / 140), 0, Math.PI * 2); ctx.fill();
       });
     } else if (analysis.analysisMode === 'PaintedMask') {
       var mask = document.createElement('canvas'); mask.width = canvas.width; mask.height = canvas.height;
@@ -974,32 +1145,42 @@
     var b = canvas.getBoundingClientRect();
     return { x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)) };
   }
-  function bindRectEditor(canvas, analysis, actions, redraw) {
+  function pointInsideWebQuad(point, quad) {
+    var points = webQuadPoints(quad), inside = false, previous = points[points.length - 1];
+    points.forEach(function (current) {
+      if ((current.y > point.y) !== (previous.y > point.y) &&
+          point.x < (previous.x - current.x) * (point.y - current.y) / ((previous.y - current.y) || .000001) + current.x) inside = !inside;
+      previous = current;
+    });
+    return inside;
+  }
+  function cloneWebQuad(quad) {
+    return JSON.parse(JSON.stringify(quad));
+  }
+  function bindQuadEditor(canvas, analysis, actions, redraw) {
     var start = null, original = null, handle = null;
     canvas.addEventListener('pointerdown', function (e) {
-      start = pointerNormalized(canvas, e); original = Object.assign({}, analysis.analysisRectNormalized || defaultWebRect());
-      var corners = { tl: [original.left, original.top], tr: [original.right, original.top], bl: [original.left, original.bottom], br: [original.right, original.bottom] };
+      start = pointerNormalized(canvas, e); original = cloneWebQuad(analysis.analysisQuadNormalized || rectToWebQuad(analysis.analysisRectNormalized));
+      var corners = { topLeft: original.topLeft, topRight: original.topRight, bottomRight: original.bottomRight, bottomLeft: original.bottomLeft };
       var closest = null, distance = Infinity;
-      Object.keys(corners).forEach(function (key) { var p = corners[key]; var d = Math.hypot(start.x - p[0], start.y - p[1]); if (d < distance) { distance = d; closest = key; } });
-      handle = distance <= .06 ? closest : (start.x >= original.left && start.x <= original.right && start.y >= original.top && start.y <= original.bottom ? 'move' : null);
+      Object.keys(corners).forEach(function (key) { var p = corners[key]; var d = Math.hypot(start.x - p.x, start.y - p.y); if (d < distance) { distance = d; closest = key; } });
+      handle = distance <= .06 ? closest : (pointInsideWebQuad(start, original) ? 'move' : null);
       if (!handle) { start = null; return; }
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', function (e) {
-      if (!start) return; var p = pointerNormalized(canvas, e), min = .08, next = Object.assign({}, original);
+      if (!start) return; var p = pointerNormalized(canvas, e), next = cloneWebQuad(original);
       if (handle === 'move') {
-        var w = original.right - original.left, h = original.bottom - original.top;
-        next.left = Math.min(1 - w, Math.max(0, original.left + p.x - start.x)); next.top = Math.min(1 - h, Math.max(0, original.top + p.y - start.y));
-        next.right = next.left + w; next.bottom = next.top + h;
+        var points = webQuadPoints(original);
+        var dx = Math.min(1 - Math.max.apply(null, points.map(function (v) { return v.x; })), Math.max(-Math.min.apply(null, points.map(function (v) { return v.x; })), p.x - start.x));
+        var dy = Math.min(1 - Math.max.apply(null, points.map(function (v) { return v.y; })), Math.max(-Math.min.apply(null, points.map(function (v) { return v.y; })), p.y - start.y));
+        next = translateWebQuad(original, dx, dy);
       } else {
-        if (handle === 'tl' || handle === 'bl') next.left = Math.min(original.right - min, p.x);
-        if (handle === 'tr' || handle === 'br') next.right = Math.max(original.left + min, p.x);
-        if (handle === 'tl' || handle === 'tr') next.top = Math.min(original.bottom - min, p.y);
-        if (handle === 'bl' || handle === 'br') next.bottom = Math.max(original.top + min, p.y);
+        next[handle] = { x: p.x, y: p.y };
       }
-      analysis.analysisRectNormalized = next; redraw();
+      analysis.analysisQuadNormalized = next; redraw();
     });
-    canvas.addEventListener('pointerup', function () { if (start) actions.updateSelectedPhotoAnalysisRect(analysis.analysisRectNormalized); start = null; handle = null; });
+    canvas.addEventListener('pointerup', function () { if (start) actions.updateSelectedPhotoAnalysisQuad(analysis.analysisQuadNormalized); start = null; handle = null; });
     canvas.addEventListener('pointercancel', function () { start = null; handle = null; });
   }
   function bindMaskEditor(canvas, analysis, actions, redraw) {

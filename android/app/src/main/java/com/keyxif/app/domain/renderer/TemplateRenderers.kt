@@ -39,7 +39,7 @@ class ClassicFrameRenderer : TemplateRenderer {
         val logoWidth = min(w * 0.13f, bar.height() * 1.12f)
         val logoBox = RectF(pad, bar.top + bar.height() * 0.2f, pad + logoWidth, bar.bottom - bar.height() * 0.2f)
         val contentColor = assets.cardContentColor
-        val secondaryColor = CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor)
+        val secondaryColor = contentColor
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, contentColor, LogoAnchor.Start)
 
         val rows = info.toDisplayRows(includeNickname = true).take(6)
@@ -101,7 +101,7 @@ class MinimalCaptionRenderer : TemplateRenderer {
         val captionHeight = h * CAPTION_RATIO
         val pad = w * 0.045f
         val contentColor = assets.cardContentColor
-        val secondaryColor = CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor)
+        val secondaryColor = contentColor
         val titlePaint = medium(scaled(h * 0.024f, settings), contentColor)
         val bodyPaint = regular(scaled(h * 0.0155f, settings), secondaryColor)
         val logoWidth = min(w * 0.12f, captionHeight * 1.05f)
@@ -141,7 +141,7 @@ class MinimalCaptionRenderer : TemplateRenderer {
 }
 
 class BottomSpecBarRenderer : TemplateRenderer {
-    override fun backgroundColor(): Int = Color.rgb(236, 238, 235)
+    override fun backgroundColor(): Int = Color.rgb(35, 38, 38)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Dark
 
     override fun photoBounds(bounds: RectF): RectF {
@@ -152,14 +152,14 @@ class BottomSpecBarRenderer : TemplateRenderer {
         val w = bounds.width()
         val h = bounds.height()
         val top = h * (1f - BAR_RATIO)
-        canvas.drawRect(0f, top, w, h, CanvasRenderUtils.paint(Color.rgb(35, 38, 38), 1f))
+        canvas.drawRect(0f, top, w, h, CanvasRenderUtils.paint(assets.cardBackgroundColor, 1f))
         val pad = w * 0.035f
         val primaryRows = info.toDisplayRows()
             .filter { it.label in setOf("Housing", "Switch", "Keycap") }
             .take(3)
-        val labelPaint = regular(scaled(h * 0.0105f, settings), Color.argb(180, 255, 255, 255))
-        val valuePaint = medium(scaled(h * 0.0165f, settings), Color.WHITE)
-        val detailPaint = regular(scaled(h * 0.0138f, settings, settings.nicknameEmphasis), Color.argb(220, 255, 255, 255)).apply {
+        val labelPaint = regular(scaled(h * 0.0105f, settings), assets.cardContentColor)
+        val valuePaint = medium(scaled(h * 0.0165f, settings), assets.cardContentColor)
+        val detailPaint = regular(scaled(h * 0.0138f, settings, settings.nicknameEmphasis), assets.cardContentColor).apply {
             textAlign = Paint.Align.RIGHT
         }
 
@@ -207,8 +207,8 @@ class CornerMarkRenderer : TemplateRenderer {
         val w = bounds.width()
         val h = bounds.height()
         val pad = min(w, h) * 0.025f
-        val titlePaint = medium(scaled(h * 0.017f, settings), Color.WHITE)
-        val subPaint = regular(scaled(h * 0.011f, settings, settings.nicknameEmphasis), Color.argb(220, 255, 255, 255))
+        val titlePaint = medium(scaled(h * 0.017f, settings), assets.cardContentColor)
+        val subPaint = regular(scaled(h * 0.011f, settings, settings.nicknameEmphasis), assets.cardContentColor)
         val cardScale = 1.15f
         val maxCardWidth = w * 0.48f
         val minCardWidth = if (title == null && subtitle.isBlank()) w * 0.092f else w * 0.195f
@@ -302,7 +302,7 @@ class PosterMarginRenderer : TemplateRenderer {
         val logoWidth = min(w * 0.14f, h * 0.105f)
         val logoBox = RectF(w - pad - logoWidth, footerTop + h * 0.025f, w - pad, footerTop + h * 0.09f)
         val contentColor = assets.cardContentColor
-        val secondaryColor = CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor)
+        val secondaryColor = contentColor
         val titlePaint = medium(scaled(h * 0.028f, settings), contentColor)
         val specPaint = regular(scaled(h * 0.015f, settings), secondaryColor)
         val signaturePaint = medium(scaled(h * 0.014f, settings, settings.nicknameEmphasis), secondaryColor).apply {
@@ -357,8 +357,8 @@ class DarkGlassStripRenderer : TemplateRenderer {
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, Color.WHITE, LogoAnchor.Start)
         val startX = (logoActual?.right ?: strip.left) + pad
         val rowRight = if (colors.isNotEmpty()) w * 0.68f else w - pad
-        val labelPaint = regular(scaled(h * 0.0105f, settings), Color.argb(180, 255, 255, 255))
-        val valuePaint = medium(scaled(h * 0.0168f, settings), Color.WHITE)
+        val labelPaint = regular(scaled(h * 0.0105f, settings), assets.cardContentColor)
+        val valuePaint = medium(scaled(h * 0.0168f, settings), assets.cardContentColor)
         if (rows.isNotEmpty()) {
             val columnWidth = ((rowRight - startX).coerceAtLeast(w * 0.25f)) / rows.size
             rows.forEachIndexed { index, row ->
@@ -415,7 +415,7 @@ class SideSpecRailRenderer : TemplateRenderer {
         val title = info.displayTitleOrNull()
         val rows = rowsExcludingTitle(info.toDisplayRows(includeNickname = true), title).take(5)
         val titlePaint = medium(scaled(h * 0.024f, settings), assets.cardContentColor)
-        val labelPaint = regular(scaled(h * 0.0115f, settings), CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor))
+        val labelPaint = regular(scaled(h * 0.0115f, settings), assets.cardContentColor)
         val valuePaint = medium(scaled(h * 0.0155f, settings), assets.cardContentColor)
         var cursorY = (logoActual?.bottom ?: rail.top) + if (assets.hasLogo) h * 0.06f else h * 0.075f
         title?.let {
@@ -423,8 +423,12 @@ class SideSpecRailRenderer : TemplateRenderer {
             cursorY += h * 0.075f
         }
         rows.forEach { row ->
-            drawInfoRow(canvas, row, rail.left + pad, cursorY, rail.width() - pad * 2f, labelPaint, valuePaint, h * 0.028f)
-            cursorY += h * 0.095f
+            val valueLines = wrapTextAtWords(row.value, valuePaint, rail.width() - pad * 2f, maxLines = 2)
+            drawTextBaseline(canvas, row.label.uppercase(Locale.ROOT), rail.left + pad, cursorY, labelPaint, rail.width() - pad * 2f)
+            valueLines.forEachIndexed { index, line ->
+                drawTextBaseline(canvas, line, rail.left + pad, cursorY + h * (0.028f + index * 0.024f), valuePaint, rail.width() - pad * 2f)
+            }
+            cursorY += h * if (valueLines.size > 1) 0.115f else 0.095f
         }
         CanvasRenderUtils.drawPaletteChipsInRect(
             canvas = canvas,
@@ -461,7 +465,7 @@ class TopNameplateRenderer : TemplateRenderer {
         val logoBox = RectF(pad, header.centerY() - logoWidth / 2f, pad + logoWidth, header.centerY() + logoWidth / 2f)
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, assets.cardContentColor, LogoAnchor.Start)
         val titlePaint = medium(scaled(h * 0.025f, settings), assets.cardContentColor)
-        val bodyPaint = regular(scaled(h * 0.0145f, settings), CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor))
+        val bodyPaint = regular(scaled(h * 0.0145f, settings), assets.cardContentColor)
         val textX = (logoActual?.right ?: header.left) + pad * if (logoActual == null) 1f else 0.78f
         val right = w - pad
         val title = info.displayTitleOrNull()
@@ -516,8 +520,8 @@ class MuseumMatRenderer : TemplateRenderer {
         val logoBox = RectF(w - pad - logoSize, labelTop, w - pad, labelTop + logoSize)
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, assets.cardContentColor, LogoAnchor.End)
         val titlePaint = medium(scaled(h * 0.026f, settings), assets.cardContentColor)
-        val bodyPaint = regular(scaled(h * 0.015f, settings), CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor))
-        val labelPaint = regular(scaled(h * 0.012f, settings), CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor))
+        val bodyPaint = regular(scaled(h * 0.015f, settings), assets.cardContentColor)
+        val labelPaint = regular(scaled(h * 0.012f, settings), assets.cardContentColor)
         val textRight = (logoActual?.left?.minus(pad * 1.6f)) ?: (w - pad)
         val title = info.displayTitleOrNull()
         val details = detailTextExcluding(
@@ -581,7 +585,7 @@ class CompactTicketRenderer : TemplateRenderer {
         val logoBox = RectF(ticket.left + ticket.height() * 0.2f, ticket.centerY() - logoSize / 2f, ticket.left + ticket.height() * 0.2f + logoSize, ticket.centerY() + logoSize / 2f)
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, assets.cardContentColor, LogoAnchor.Start)
         val titlePaint = medium(scaled(h * 0.0195f, settings), assets.cardContentColor)
-        val bodyPaint = regular(scaled(h * 0.013f, settings), CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor))
+        val bodyPaint = regular(scaled(h * 0.013f, settings), assets.cardContentColor)
         val textX = (logoActual?.right ?: ticket.left) + ticket.height() * if (logoActual == null) 0.2f else 0.2f
         val paletteLeft = ticket.right - ticket.width() * 0.24f
         val right = if (colors.isEmpty()) {
@@ -637,7 +641,7 @@ class CleanSignatureRenderer : TemplateRenderer {
         val logoBox = RectF(w - pad - logoSize, footerTop + h * 0.035f, w - pad, footerTop + h * 0.035f + logoSize)
         val logoActual = drawLogoIfPresent(canvas, logoBox, assets, assets.cardContentColor, LogoAnchor.End)
         val titlePaint = medium(scaled(h * 0.026f, settings), assets.cardContentColor)
-        val bodyPaint = regular(scaled(h * 0.0145f, settings), CanvasRenderUtils.readableSecondaryColor(assets.cardBackgroundColor))
+        val bodyPaint = regular(scaled(h * 0.0145f, settings), assets.cardContentColor)
         val nickPaint = medium(scaled(h * 0.019f, settings, settings.nicknameEmphasis), assets.cardContentColor)
         val textRight = (logoActual?.left?.minus(pad))
             ?: if (colors.isNotEmpty()) logoBox.left - pad else w - pad
@@ -691,6 +695,31 @@ private fun drawInfoRow(
 ) {
     drawTextBaseline(canvas, row.label.uppercase(Locale.ROOT), x, labelBaseline, labelPaint, maxWidth)
     drawTextBaseline(canvas, row.value, x, labelBaseline + valueOffset, valuePaint, maxWidth)
+}
+
+private fun wrapTextAtWords(text: String, paint: Paint, maxWidth: Float, maxLines: Int): List<String> {
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (words.isEmpty()) return emptyList()
+    val lines = mutableListOf<String>()
+    var current = ""
+    words.forEach { word ->
+        val candidate = if (current.isBlank()) word else "$current $word"
+        if (paint.measureText(candidate) <= maxWidth || current.isBlank()) {
+            current = candidate
+        } else {
+            lines += current
+            current = word
+        }
+    }
+    if (current.isNotBlank()) lines += current
+    if (lines.size <= maxLines) return lines.map { TextDrawUtils.ellipsize(it, paint, maxWidth) }
+    return lines.take(maxLines).mapIndexed { index, line ->
+        if (index == maxLines - 1) {
+            TextDrawUtils.ellipsize((listOf(line) + lines.drop(maxLines)).joinToString(" "), paint, maxWidth)
+        } else {
+            line
+        }
+    }
 }
 
 private fun drawLogoIfPresent(

@@ -501,6 +501,10 @@ private fun previewRenderKey(
         state.settings.paletteCenterCropRatio,
         photo.renderStyle.usePaletteColorForCardBackground,
         photo.renderStyle.paletteBackgroundColorIndex,
+        photo.renderStyle.customCardBackgroundColor,
+        photo.renderStyle.usePaletteColorForText,
+        photo.renderStyle.paletteTextColorIndex,
+        photo.renderStyle.customTextColor,
         state.settings.autoSelectLogoContrastVariant,
     ).joinToString("-")
 }

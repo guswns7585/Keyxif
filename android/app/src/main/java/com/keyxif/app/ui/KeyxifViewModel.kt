@@ -44,6 +44,7 @@ import com.keyxif.app.domain.model.KeycapPreset
 import com.keyxif.app.domain.model.LogoPreset
 import com.keyxif.app.domain.model.MaskStroke
 import com.keyxif.app.domain.model.NormalizedRect
+import com.keyxif.app.domain.model.NormalizedQuad
 import com.keyxif.app.domain.model.PaletteAnalysisMode
 import com.keyxif.app.domain.model.PhotoAnalysisResult
 import com.keyxif.app.domain.model.PhotoItem
@@ -53,6 +54,8 @@ import com.keyxif.app.domain.model.SwitchPreset
 import com.keyxif.app.domain.model.UpdateCheckState
 import com.keyxif.app.domain.model.UpdateDownloadState
 import com.keyxif.app.domain.model.defaultPaletteAnalysisRect
+import com.keyxif.app.domain.model.defaultPaletteAnalysisQuad
+import com.keyxif.app.domain.model.toQuad
 import com.keyxif.app.domain.renderer.KeyxifCanvasRenderer
 import com.keyxif.app.util.BitmapUtils
 import com.keyxif.app.util.FileNameUtils
@@ -568,6 +571,13 @@ class KeyxifViewModel(
                     } else {
                         current.analysisRectNormalized
                     },
+                    analysisQuadNormalized = if (mode == PaletteAnalysisMode.RectSelection) {
+                        current.analysisQuadNormalized
+                            ?: current.analysisRectNormalized?.toQuad()
+                            ?: defaultPaletteAnalysisQuad()
+                    } else {
+                        current.analysisQuadNormalized
+                    },
                     analyzedAt = 0L,
                     isAnalyzing = false,
                     errorMessage = null,
@@ -584,6 +594,13 @@ class KeyxifViewModel(
         val photoId = uiState.value.selectedPhoto?.id ?: return
         updatePhoto(photoId) { photo ->
             photo.copy(analysisResult = photo.analysisResult.copy(analysisRectNormalized = rect.normalized()))
+        }
+    }
+
+    fun updateSelectedPhotoAnalysisQuad(quad: NormalizedQuad) {
+        val photoId = uiState.value.selectedPhoto?.id ?: return
+        updatePhoto(photoId) { photo ->
+            photo.copy(analysisResult = photo.analysisResult.copy(analysisQuadNormalized = quad.normalized()))
         }
     }
 
@@ -1310,6 +1327,7 @@ class KeyxifViewModel(
                         maxColors = 5,
                         centerCropRatio = request.analysisCenterCropRatio,
                         rectNormalized = request.analysisRectNormalized,
+                        quadNormalized = request.analysisQuadNormalized,
                         maskStrokes = request.paintedMaskStrokes,
                     )
                 }
@@ -1321,6 +1339,7 @@ class KeyxifViewModel(
                             if (photo.id == target.id) {
                                 if (photo.analysisResult.analysisMode != request.analysisMode ||
                                     photo.analysisResult.analysisRectNormalized != request.analysisRectNormalized ||
+                                    photo.analysisResult.analysisQuadNormalized != request.analysisQuadNormalized ||
                                     photo.analysisResult.paintedMaskStrokes != request.paintedMaskStrokes
                                 ) return@map photo
                                 val colors = result.getOrDefault(emptyList())

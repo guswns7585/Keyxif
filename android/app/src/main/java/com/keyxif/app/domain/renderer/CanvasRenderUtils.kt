@@ -27,6 +27,7 @@ data class RenderAssets(
     val hasLogo: Boolean = logoBitmap != null || logoLabel.isMeaningfulBuildText(),
     val cardBackgroundColor: Int = Color.TRANSPARENT,
     val cardContentColor: Int = Color.BLACK,
+    val logoTintColor: Int? = null,
 )
 
 enum class PaletteChipAlignment {
@@ -184,8 +185,10 @@ object CanvasRenderUtils {
         settings: AppSettings,
         usePaletteColorForCardBackground: Boolean = settings.usePaletteColorForCardBackground,
         paletteBackgroundColorIndex: Int = settings.paletteBackgroundColorIndex,
+        customCardBackgroundColor: Int? = null,
     ): Int {
         if (!settings.showPaletteColors || !usePaletteColorForCardBackground) return fallback
+        customCardBackgroundColor?.takeIf { Color.alpha(it) > 0 }?.let { return it }
         return paletteColors
             .filter { Color.alpha(it) > 0 }
             .getOrNull(paletteBackgroundColorIndex.coerceIn(0, 4))
@@ -193,12 +196,11 @@ object CanvasRenderUtils {
     }
 
     fun readableContentColor(backgroundColor: Int): Int {
-        val luminance = (
-            Color.red(backgroundColor) * 0.299f +
-                Color.green(backgroundColor) * 0.587f +
-                Color.blue(backgroundColor) * 0.114f
-            ) / 255f
-        return if (luminance >= 0.56f) Color.rgb(20, 21, 20) else Color.WHITE
+        return if (relativeLuminance(backgroundColor) >= 0.36) Color.rgb(20, 21, 20) else Color.WHITE
+    }
+
+    fun relativeLuminance(color: Int): Double {
+        return BackgroundContrast.relativeLuminance(color)
     }
 
     fun readableSecondaryColor(backgroundColor: Int): Int {
@@ -206,7 +208,7 @@ object CanvasRenderUtils {
         return if (primary == Color.WHITE) Color.argb(218, 255, 255, 255) else Color.rgb(78, 80, 76)
     }
 
-    fun isDarkColor(color: Int): Boolean = readableContentColor(color) == Color.WHITE
+    fun isDarkColor(color: Int): Boolean = BackgroundContrast.isDark(color)
 
     fun drawPaletteChips(
         canvas: Canvas,

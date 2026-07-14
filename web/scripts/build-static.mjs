@@ -10,6 +10,7 @@ const entries = [
   "main.js",
   "palette.js",
   "search.js",
+  "webp-encoder.js",
   "store.js",
   "ui-gallery.js",
   "ui-main.js",

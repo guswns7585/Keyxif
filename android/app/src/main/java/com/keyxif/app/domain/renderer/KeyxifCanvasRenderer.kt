@@ -12,7 +12,6 @@ import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.CardTemplate
 import com.keyxif.app.domain.model.LogoPreset
 import com.keyxif.app.domain.model.PhotoItem
-import com.keyxif.app.domain.model.TemplateBackgroundTone
 import com.keyxif.app.domain.model.isMeaningfulBuildText
 import com.keyxif.app.util.BitmapUtils
 import kotlin.math.max
@@ -58,16 +57,8 @@ class KeyxifCanvasRenderer(
                 settings = settings,
                 usePaletteColorForCardBackground = photo.renderStyle.usePaletteColorForCardBackground,
                 paletteBackgroundColorIndex = photo.renderStyle.paletteBackgroundColorIndex,
+                customCardBackgroundColor = photo.renderStyle.customCardBackgroundColor,
             )
-            val logoTone = if (settings.showPaletteColors && photo.renderStyle.usePaletteColorForCardBackground) {
-                if (CanvasRenderUtils.isDarkColor(cardBackgroundColor)) {
-                    TemplateBackgroundTone.Dark
-                } else {
-                    TemplateBackgroundTone.Light
-                }
-            } else {
-                templateRenderer.logoBackgroundTone()
-            }
             canvas.drawColor(cardBackgroundColor)
             val photoBounds = templateRenderer.photoBounds(bounds)
             drawTemplatePhoto(
@@ -77,20 +68,16 @@ class KeyxifCanvasRenderer(
                 placement = templateRenderer.photoPlacement(),
             )
             val logoPreset = if (photo.buildInfo.logoDisabled) null else presetRepository.logoForBuildInfo(photo.buildInfo)
+            val resolvedLogo = LogoRenderResolver.resolveLogoForBackground(logoPreset, cardBackgroundColor)
+            val customLogoBitmap = if (photo.buildInfo.logoDisabled) null else photo.buildInfo.customLogoUri?.let { uri ->
+                runCatching { BitmapUtils.decodeOrientedBitmap(context, uri, 512) }.getOrNull()
+            }
             logoBitmap = if (photo.buildInfo.logoDisabled) {
                 null
             } else {
-                photo.buildInfo.customLogoUri?.let { uri ->
-                    runCatching {
-                        BitmapUtils.decodeOrientedBitmap(context, uri, 512)
-                    }.getOrNull()
-                } ?: decodeLogoBitmap(
+                customLogoBitmap ?: decodeLogoBitmap(
                     context = context,
-                    drawableResId = resolveLogoDrawable(
-                        logoPreset = logoPreset,
-                        tone = logoTone,
-                        autoSelectVariant = settings.autoSelectLogoContrastVariant,
-                    ),
+                    drawableResId = resolvedLogo.drawableResId,
                 )
             }
             val logoLabel = if (photo.buildInfo.logoDisabled) {
@@ -107,7 +94,15 @@ class KeyxifCanvasRenderer(
                 paletteColors = photo.analysisResult.paletteColors,
                 hasLogo = hasLogo,
                 cardBackgroundColor = cardBackgroundColor,
-                cardContentColor = CanvasRenderUtils.readableContentColor(cardBackgroundColor),
+                cardContentColor = if (settings.showPaletteColors && photo.renderStyle.usePaletteColorForText) {
+                    photo.renderStyle.customTextColor
+                        ?: photo.analysisResult.paletteColors
+                        .getOrNull(photo.renderStyle.paletteTextColorIndex.coerceIn(0, 4))
+                        ?: CanvasRenderUtils.readableContentColor(cardBackgroundColor)
+                } else {
+                    CanvasRenderUtils.readableContentColor(cardBackgroundColor)
+                },
+                logoTintColor = if (customLogoBitmap != null) null else resolvedLogo.tintColor,
             )
             drawPhotoOverlayLogoIfNeeded(
                 context = context,
@@ -137,30 +132,6 @@ class KeyxifCanvasRenderer(
             val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, canvas.width, canvas.height)
             drawable.draw(canvas)
-        }
-    }
-
-    private fun resolveLogoDrawable(
-        logoPreset: LogoPreset?,
-        tone: TemplateBackgroundTone,
-        autoSelectVariant: Boolean,
-    ): Int? {
-        if (logoPreset == null) return null
-        if (!autoSelectVariant) {
-            return logoPreset.drawableResId
-                ?: logoPreset.blackDrawableResId
-                ?: logoPreset.whiteDrawableResId
-        }
-        return when (tone) {
-            TemplateBackgroundTone.Light -> logoPreset.blackDrawableResId
-                ?: logoPreset.drawableResId
-                ?: logoPreset.whiteDrawableResId
-            TemplateBackgroundTone.Dark -> logoPreset.whiteDrawableResId
-                ?: logoPreset.drawableResId
-                ?: logoPreset.blackDrawableResId
-            TemplateBackgroundTone.Mixed -> logoPreset.drawableResId
-                ?: logoPreset.blackDrawableResId
-                ?: logoPreset.whiteDrawableResId
         }
     }
 

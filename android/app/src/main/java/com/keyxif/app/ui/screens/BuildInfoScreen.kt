@@ -107,6 +107,8 @@ fun BuildInfoScreen(
         },
     )
     var showPresetPicker by rememberSaveable { mutableStateOf(false) }
+    var showLogoPicker by rememberSaveable { mutableStateOf(false) }
+    var logoQuery by rememberSaveable { mutableStateOf("") }
     var presetPendingDelete by remember { mutableStateOf<BuildPreset?>(null) }
     val appliedPresetName = presets.firstOrNull { it.buildInfo == info }?.presetName
 
@@ -132,6 +134,27 @@ fun BuildInfoScreen(
             },
             onDeletePreset = { presetPendingDelete = it },
             onDismiss = { showPresetPicker = false },
+        )
+    }
+
+    if (showLogoPicker) {
+        LogoPickerBottomSheet(
+            logos = logos,
+            query = logoQuery,
+            selectedLogoId = info.logoId.takeUnless { info.logoDisabled || info.customLogoUri != null },
+            onQueryChange = { logoQuery = it },
+            onSelect = { logo ->
+                val selected = !info.logoDisabled && info.logoId == logo.id && info.customLogoUri == null
+                onBuildInfoChange(
+                    info.copy(
+                        logoId = if (selected) null else logo.id,
+                        customLogoUri = null,
+                        logoDisabled = selected,
+                    ),
+                )
+                showLogoPicker = false
+            },
+            onDismiss = { showLogoPicker = false },
         )
     }
 
@@ -413,22 +436,6 @@ fun BuildInfoScreen(
                         },
                         label = { Text("자동") },
                     )
-                    logos.forEach { logo ->
-                        val selected = !info.logoDisabled && info.logoId == logo.id && info.customLogoUri == null
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                onBuildInfoChange(
-                                    info.copy(
-                                        logoId = if (selected) null else logo.id,
-                                        customLogoUri = null,
-                                        logoDisabled = selected,
-                                    ),
-                                )
-                            },
-                            label = { Text(logo.name) },
-                        )
-                    }
                     FilterChip(
                         selected = !info.logoDisabled && info.customLogoUri != null,
                         onClick = {
@@ -442,6 +449,13 @@ fun BuildInfoScreen(
                         leadingIcon = { Icon(Icons.Default.Upload, contentDescription = null) },
                     )
                 }
+                val selectedLogoName = logos.firstOrNull { it.id == info.logoId }?.name
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { showLogoPicker = true },
+                ) {
+                    Text(selectedLogoName?.let { "내장 로고: $it" } ?: "내장 로고 검색")
+                }
                 info.customLogoUri?.takeUnless { info.logoDisabled }?.let { uri ->
                     AsyncImage(
                         model = uri,
@@ -451,6 +465,80 @@ fun BuildInfoScreen(
                             .height(72.dp),
                         contentScale = ContentScale.Fit,
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LogoPickerBottomSheet(
+    logos: List<LogoPreset>,
+    query: String,
+    selectedLogoId: String?,
+    onQueryChange: (String) -> Unit,
+    onSelect: (LogoPreset) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val filtered by remember(logos, query) {
+        derivedStateOf {
+            val normalizedQuery = query.trim()
+            logos.asSequence()
+                .filter { logo ->
+                    normalizedQuery.isBlank() ||
+                        logo.name.contains(normalizedQuery, ignoreCase = true) ||
+                        logo.aliases.any { it.contains(normalizedQuery, ignoreCase = true) }
+                }
+                .sortedBy { it.name.lowercase() }
+                .toList()
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("로고 선택", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            ClearableSearchField(
+                modifier = Modifier.fillMaxWidth(),
+                value = query,
+                onValueChange = onQueryChange,
+                labelText = "로고 검색",
+                placeholderText = "브랜드명으로 검색",
+            )
+            if (filtered.isEmpty()) {
+                Text("검색 결과가 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
+                items(filtered, key = { it.id }) { logo ->
+                    val preview = logo.drawableResId ?: logo.blackDrawableResId ?: logo.whiteDrawableResId
+                    ListItem(
+                        leadingContent = {
+                            preview?.let {
+                                AsyncImage(
+                                    model = it,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
+                        },
+                        headlineContent = { Text(logo.name, fontWeight = FontWeight.SemiBold) },
+                        supportingContent = logo.aliases.takeIf { it.isNotEmpty() }?.let { aliases ->
+                            { Text(aliases.take(3).joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        },
+                        trailingContent = selectedLogoId.takeIf { it == logo.id }?.let {
+                            { Text("선택됨", color = MaterialTheme.colorScheme.primary) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextButton(modifier = Modifier.fillMaxWidth(), onClick = { onSelect(logo) }) {
+                        Text(if (selectedLogoId == logo.id) "선택 해제" else "이 로고 선택")
+                    }
+                    HorizontalDivider()
                 }
             }
         }

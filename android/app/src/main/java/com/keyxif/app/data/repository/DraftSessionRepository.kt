@@ -21,6 +21,8 @@ import com.keyxif.app.domain.model.NicknameStyle
 import com.keyxif.app.domain.model.MaskStroke
 import com.keyxif.app.domain.model.NormalizedPoint
 import com.keyxif.app.domain.model.NormalizedRect
+import com.keyxif.app.domain.model.NormalizedQuad
+import com.keyxif.app.domain.model.toQuad
 import com.keyxif.app.domain.model.OutputFormat
 import com.keyxif.app.domain.model.PaletteAnalysisMode
 import com.keyxif.app.domain.model.PhotoAnalysisResult
@@ -162,6 +164,7 @@ class DraftSessionRepository(
         put("analysisMode", analysisMode?.name)
         put("analysisCenterCropRatio", analysisCenterCropRatio)
         put("analysisRectNormalized", analysisRectNormalized?.toJson())
+        put("analysisQuadNormalized", analysisQuadNormalized?.toJson())
         put("paintedMaskStrokes", JSONArray().apply { paintedMaskStrokes.forEach { put(it.toJson()) } })
     }
 
@@ -174,6 +177,8 @@ class DraftSessionRepository(
             analysisMode = parsePaletteMode(optNullableString("analysisMode")),
             analysisCenterCropRatio = optDouble("analysisCenterCropRatio", 0.75).toFloat(),
             analysisRectNormalized = optJSONObject("analysisRectNormalized")?.toNormalizedRect(),
+            analysisQuadNormalized = optJSONObject("analysisQuadNormalized")?.toNormalizedQuad()
+                ?: optJSONObject("analysisRectNormalized")?.toNormalizedRect()?.toQuad(),
             paintedMaskStrokes = optJSONArray("paintedMaskStrokes").toMaskStrokes(),
         )
     }
@@ -186,6 +191,29 @@ class DraftSessionRepository(
         left = optDouble("left", 0.15).toFloat(), top = optDouble("top", 0.39).toFloat(),
         right = optDouble("right", 0.85).toFloat(), bottom = optDouble("bottom", 0.61).toFloat(),
     ).normalized()
+
+    private fun NormalizedQuad.toJson(): JSONObject = JSONObject().apply {
+        put("topLeft", topLeft.toJson())
+        put("topRight", topRight.toJson())
+        put("bottomRight", bottomRight.toJson())
+        put("bottomLeft", bottomLeft.toJson())
+    }
+
+    private fun NormalizedPoint.toJson(): JSONObject = JSONObject().apply {
+        put("x", x); put("y", y)
+    }
+
+    private fun JSONObject.toNormalizedQuad(): NormalizedQuad = NormalizedQuad(
+        topLeft = optJSONObject("topLeft").toNormalizedPoint(0.15f, 0.39f),
+        topRight = optJSONObject("topRight").toNormalizedPoint(0.85f, 0.39f),
+        bottomRight = optJSONObject("bottomRight").toNormalizedPoint(0.85f, 0.61f),
+        bottomLeft = optJSONObject("bottomLeft").toNormalizedPoint(0.15f, 0.61f),
+    ).normalized()
+
+    private fun JSONObject?.toNormalizedPoint(defaultX: Float, defaultY: Float): NormalizedPoint = NormalizedPoint(
+        x = this?.optDouble("x", defaultX.toDouble())?.toFloat() ?: defaultX,
+        y = this?.optDouble("y", defaultY.toDouble())?.toFloat() ?: defaultY,
+    )
 
     private fun MaskStroke.toJson(): JSONObject = JSONObject().apply {
         put("brushSizeNormalized", brushSizeNormalized); put("isEraser", isEraser)
@@ -215,12 +243,20 @@ class DraftSessionRepository(
     private fun PhotoRenderStyle.toJson(): JSONObject = JSONObject().apply {
         put("usePaletteColorForCardBackground", usePaletteColorForCardBackground)
         put("paletteBackgroundColorIndex", paletteBackgroundColorIndex)
+        put("customCardBackgroundColor", customCardBackgroundColor ?: JSONObject.NULL)
+        put("usePaletteColorForText", usePaletteColorForText)
+        put("paletteTextColorIndex", paletteTextColorIndex)
+        put("customTextColor", customTextColor ?: JSONObject.NULL)
     }
 
     private fun JSONObject.toRenderStyle(): PhotoRenderStyle {
         return PhotoRenderStyle(
             usePaletteColorForCardBackground = optBoolean("usePaletteColorForCardBackground", false),
             paletteBackgroundColorIndex = optInt("paletteBackgroundColorIndex", 0).coerceIn(0, 4),
+            customCardBackgroundColor = optNullableColor("customCardBackgroundColor"),
+            usePaletteColorForText = optBoolean("usePaletteColorForText", false),
+            paletteTextColorIndex = optInt("paletteTextColorIndex", 0).coerceIn(0, 4),
+            customTextColor = optNullableColor("customTextColor"),
         )
     }
 
@@ -338,6 +374,11 @@ class DraftSessionRepository(
     private fun JSONObject.optNullableInt(key: String): Int? {
         if (isNull(key)) return null
         return optInt(key).takeIf { it > 0 }
+    }
+
+    private fun JSONObject.optNullableColor(key: String): Int? {
+        if (!has(key) || isNull(key)) return null
+        return optInt(key)
     }
 
     private fun JSONArray?.toColorList(): List<Int> {

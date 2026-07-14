@@ -162,7 +162,7 @@
   }
 
   /* ---- 정적 목록 (PresetData.kt) ---- */
-  var PLATES = ['Alu', 'PP', 'POM', 'PC', 'FR4', 'Brass', 'SUS', 'Copper', 'PEI', 'CF', 'Non-Plate'];
+  var PLATES = ['Alu', 'PP', 'POM', 'PC', 'FR4', 'Brass', 'SUS', 'Copper', 'PEI', 'CF', 'Plateless'];
   var MOUNTS = ['Top-mount', 'Bottom-mount', 'Sandwich-mount', 'O-ring-mount', 'Gasket-mount', 'Leaf Spring-mount', 'Tadpole-mount'];
 
   window.KeyxifSearch = {
@@ -177,6 +177,10 @@
     matchHousingByText: matchHousingByText,
     get plates() { return (P().plates && P().plates.length ? P().plates : PLATES); },
     get mounts() { return (P().mounts && P().mounts.length ? P().mounts : MOUNTS); },
-    get logos() { return P().logos; },
+    get logos() {
+      return P().logos.slice().sort(function (a, b) {
+        return String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
+      });
+    },
   };
 })();

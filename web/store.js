@@ -56,7 +56,7 @@
 
   var SAVE_LONG_SIDE_LIMIT = 4096;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.0.6-web';
+  var VERSION = '1.0.7-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */
@@ -84,6 +84,10 @@
 
   function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
   function enumOr(value, allowed, dflt) { return allowed.indexOf(value) >= 0 ? value : dflt; }
+  function normalizeCustomColor(value) {
+    var match = String(value == null ? '' : value).trim().match(/^#?([0-9a-f]{6})$/i);
+    return match ? '#' + match[1].toUpperCase() : null;
+  }
 
   function normalizeSettings(raw) {
     var d = defaultSettings();
@@ -127,16 +131,28 @@
     return {
       paletteColors: [], analyzedAt: 0, isAnalyzing: false, errorMessage: null,
       analysisMode: 'AutoCenter', analysisCenterCropRatio: 0.75,
-      analysisRectNormalized: null, paintedMaskStrokes: [],
+      analysisRectNormalized: null, analysisQuadNormalized: null, paintedMaskStrokes: [],
     };
   }
   function defaultAnalysisRect() {
     return { left: 0.15, top: 0.39, right: 0.85, bottom: 0.61 };
   }
+  function rectToAnalysisQuad(rect) {
+    var r = Object.assign(defaultAnalysisRect(), rect || {});
+    return {
+      topLeft: { x: r.left, y: r.top }, topRight: { x: r.right, y: r.top },
+      bottomRight: { x: r.right, y: r.bottom }, bottomLeft: { x: r.left, y: r.bottom },
+    };
+  }
+  function defaultAnalysisQuad() { return rectToAnalysisQuad(defaultAnalysisRect()); }
   function defaultRenderStyle() {
     return {
       usePaletteColorForCardBackground: false,
       paletteBackgroundColorIndex: 0,
+      customCardBackgroundColor: null,
+      usePaletteColorForText: false,
+      paletteTextColorIndex: 0,
+      customTextColor: null,
     };
   }
   function defaultExportProgress() {
@@ -396,6 +412,7 @@
             analysisMode: p.analysisResult.analysisMode,
             analysisCenterCropRatio: p.analysisResult.analysisCenterCropRatio,
             analysisRectNormalized: p.analysisResult.analysisRectNormalized,
+            analysisQuadNormalized: p.analysisResult.analysisQuadNormalized,
             paintedMaskStrokes: p.analysisResult.paintedMaskStrokes || [],
           },
           renderStyle: p.renderStyle || defaultRenderStyle(),
@@ -440,11 +457,16 @@
               ? 'RectSelection' : (ar.analysisMode === 'PaintedMask' ? 'PaintedMask' : 'AutoCenter'),
             analysisCenterCropRatio: Number(ar.analysisCenterCropRatio) || 0.75,
             analysisRectNormalized: ar.analysisRectNormalized || null,
+            analysisQuadNormalized: ar.analysisQuadNormalized || (ar.analysisRectNormalized ? rectToAnalysisQuad(ar.analysisRectNormalized) : null),
             paintedMaskStrokes: Array.isArray(ar.paintedMaskStrokes) ? ar.paintedMaskStrokes : [],
           },
           renderStyle: {
             usePaletteColorForCardBackground: !!rs.usePaletteColorForCardBackground,
             paletteBackgroundColorIndex: clamp(Math.round(Number(rs.paletteBackgroundColorIndex) || 0), 0, 4),
+            customCardBackgroundColor: normalizeCustomColor(rs.customCardBackgroundColor),
+            usePaletteColorForText: !!rs.usePaletteColorForText,
+            paletteTextColorIndex: clamp(Math.round(Number(rs.paletteTextColorIndex) || 0), 0, 4),
+            customTextColor: normalizeCustomColor(rs.customTextColor),
           },
           renderStatus: 'Idle',
           errorMessage: null,
@@ -492,7 +514,7 @@
       var mode = request.analysisMode;
       var ratio = request.analysisCenterCropRatio;
       decodeSource(target.uri, 640).then(function (bmp) {
-        var colors = window.KeyxifPalette.analyze(bmp, mode, 5, ratio, request.analysisRectNormalized, request.paintedMaskStrokes);
+        var colors = window.KeyxifPalette.analyze(bmp, mode, 5, ratio, request.analysisRectNormalized, request.analysisQuadNormalized, request.paintedMaskStrokes);
         if (bmp.close) bmp.close();
         return colors || [];
       }).then(function (colors) {
@@ -545,16 +567,16 @@
   function resolveRenderAssets(buildInfo, paletteColors) {
     var S = window.KeyxifSearch;
     if (buildInfo.logoDisabled) {
-      return Promise.resolve({ logoImage: null, logoLabel: '', logoVariants: null, paletteColors: paletteColors });
+      return Promise.resolve({ logoImage: null, logoLabel: '', logoVariants: null, logoColorPolicy: 'MANUAL_LIGHT_DARK', paletteColors: paletteColors });
     }
     var preset = S.logoForBuildInfo(buildInfo);
     var label = (preset && preset.name) || S.logoName(buildInfo.logoId) || '';
     var custom = buildInfo.customLogoUri ? customLogoImage(buildInfo.customLogoUri) : Promise.resolve(null);
     return custom.then(function (customImg) {
       if (customImg) {
-        return { customLogoImage: customImg, logoLabel: label, logoVariants: null, paletteColors: paletteColors };
+        return { customLogoImage: customImg, logoLabel: label, logoVariants: null, logoColorPolicy: 'MANUAL_LIGHT_DARK', paletteColors: paletteColors };
       }
-      if (!preset) return { logoImage: null, logoLabel: label, logoVariants: null, paletteColors: paletteColors };
+      if (!preset) return { logoImage: null, logoLabel: label, logoVariants: null, logoColorPolicy: 'MANUAL_LIGHT_DARK', paletteColors: paletteColors };
       return Promise.all([
         logoImage(preset.drawable), logoImage(preset.blackDrawable), logoImage(preset.whiteDrawable),
         logoImage(preset.photoOverlayDrawable),
@@ -562,6 +584,7 @@
         return {
           logoLabel: label,
           logoVariants: { default: imgs[0], black: imgs[1], white: imgs[2] },
+          logoColorPolicy: preset.colorPolicy || 'MANUAL_LIGHT_DARK',
           photoOverlayImage: imgs[3],
           paletteColors: paletteColors,
         };
@@ -583,6 +606,7 @@
           assets: {
             logoImage: assets.logoVariants ? null : (assets.logoImage || null),
             logoVariants: assets.logoVariants,
+            logoColorPolicy: assets.logoColorPolicy,
             photoOverlayImage: assets.photoOverlayImage || null,
             logoLabel: assets.logoLabel,
             paletteColors: assets.paletteColors,
@@ -661,6 +685,33 @@
     });
   }
 
+  function encodeCanvas(canvas, wantWebp, quality) {
+    if (!wantWebp) {
+      return canvasToBlob(canvas, 'PNG', quality).then(function (blob) {
+        return { blob: blob, ext: 'png' };
+      });
+    }
+    return detectWebp().then(function (nativeSupported) {
+      if (nativeSupported) {
+        return canvasToBlob(canvas, 'WEBP', quality).then(function (blob) {
+          return { blob: blob, ext: 'webp' };
+        });
+      }
+      if (window.KeyxifWebp) {
+        return window.KeyxifWebp.encode(canvas, quality)
+          .then(function (blob) { return { blob: blob, ext: 'webp' }; })
+          .catch(function () {
+            return canvasToBlob(canvas, 'PNG', quality).then(function (blob) {
+              return { blob: blob, ext: 'png' };
+            });
+          });
+      }
+      return canvasToBlob(canvas, 'PNG', quality).then(function (blob) {
+        return { blob: blob, ext: 'png' };
+      });
+    });
+  }
+
   function makeThumbnail(canvas) {
     var longest = Math.max(canvas.width, canvas.height);
     var scale = Math.min(1, 320 / longest);
@@ -724,10 +775,9 @@
         };
       });
     })).then(function (payload) {
-      return detectWebp().then(function (webpOK) {
+      return Promise.resolve().then(function () {
         if (token !== exportJobToken) return;
-        var format = s.outputFormat === 'PNG' || !webpOK ? 'PNG' : 'WEBP';
-        var ext = format === 'PNG' ? 'png' : 'webp';
+        var wantWebp = s.outputFormat !== 'PNG';
         state.exportProgress.message = dirLabel + '에 백그라운드 저장을 시작했습니다.';
         emit();
 
@@ -746,8 +796,10 @@
             photo.renderStatus = 'Rendering';
             emit();
             return renderPhotoCanvas(item.snap, template, s, saveLongSide, item.blob).then(function (canvas) {
-              return canvasToBlob(canvas, format, s.webpQuality).then(function (blob) {
+              return encodeCanvas(canvas, wantWebp, s.webpQuality).then(function (encoded) {
                 if (token !== exportJobToken) return; // 부수효과(다운로드/기록) 직전 재확인
+                var blob = encoded.blob;
+                var ext = encoded.ext;
                 var fileName = outputFileName(item.snap.buildInfo, index, s, ext);
                 downloadBlob(blob, fileName);
                 var m = U().meaningfulBuildTextOrNull;
@@ -999,6 +1051,9 @@
       if (!p) return;
       p.renderStyle = Object.assign(defaultRenderStyle(), transform(Object.assign(defaultRenderStyle(), p.renderStyle || {})));
       p.renderStyle.paletteBackgroundColorIndex = clamp(Math.round(Number(p.renderStyle.paletteBackgroundColorIndex) || 0), 0, 4);
+      p.renderStyle.paletteTextColorIndex = clamp(Math.round(Number(p.renderStyle.paletteTextColorIndex) || 0), 0, 4);
+      p.renderStyle.customCardBackgroundColor = normalizeCustomColor(p.renderStyle.customCardBackgroundColor);
+      p.renderStyle.customTextColor = normalizeCustomColor(p.renderStyle.customTextColor);
       emit();
     },
     updateSelectedPhotoAnalysisMode: function (mode) {
@@ -1006,6 +1061,9 @@
       if (!p || ['AutoCenter', 'RectSelection', 'PaintedMask'].indexOf(mode) < 0) return;
       p.analysisResult.analysisMode = mode;
       if (mode === 'RectSelection' && !p.analysisResult.analysisRectNormalized) p.analysisResult.analysisRectNormalized = defaultAnalysisRect();
+      if (mode === 'RectSelection' && !p.analysisResult.analysisQuadNormalized) {
+        p.analysisResult.analysisQuadNormalized = rectToAnalysisQuad(p.analysisResult.analysisRectNormalized);
+      }
       p.analysisResult.analyzedAt = 0; p.analysisResult.isAnalyzing = false; p.analysisResult.errorMessage = null;
       emit();
       if (mode !== 'PaintedMask' || (p.analysisResult.paintedMaskStrokes || []).length) schedulePaletteAnalysis();
@@ -1013,6 +1071,21 @@
     updateSelectedPhotoAnalysisRect: function (rect) {
       var p = selectedPhoto(); if (!p) return;
       p.analysisResult.analysisRectNormalized = Object.assign(defaultAnalysisRect(), rect || {});
+      emit();
+    },
+    updateSelectedPhotoAnalysisQuad: function (quad) {
+      var p = selectedPhoto(); if (!p || !quad) return;
+      function point(value, fallback) {
+        value = value || fallback;
+        return { x: clamp(Number(value.x), 0, 1), y: clamp(Number(value.y), 0, 1) };
+      }
+      var fallback = defaultAnalysisQuad();
+      p.analysisResult.analysisQuadNormalized = {
+        topLeft: point(quad.topLeft, fallback.topLeft),
+        topRight: point(quad.topRight, fallback.topRight),
+        bottomRight: point(quad.bottomRight, fallback.bottomRight),
+        bottomLeft: point(quad.bottomLeft, fallback.bottomLeft),
+      };
       emit();
     },
     updateSelectedPhotoCenterRatio: function (ratio) {

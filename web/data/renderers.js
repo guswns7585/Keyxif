@@ -131,8 +131,12 @@
 
   function readableContentColor(backgroundColor) {
     var c = colorToRgb(backgroundColor);
-    var luminance = (c.r * 0.299 + c.g * 0.587 + c.b * 0.114) / 255;
-    return luminance >= 0.56 ? rgb(20, 21, 20) : COLOR_WHITE;
+    function linear(channel) {
+      var value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+    }
+    var luminance = 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b);
+    return luminance >= 0.36 ? rgb(20, 21, 20) : COLOR_WHITE;
   }
 
   function isDarkColor(backgroundColor) {
@@ -425,6 +429,7 @@
   function cardBackgroundColor(fallback, paletteColors, settings, renderStyle) {
     var style = renderStyle || {};
     if (!settings.showPaletteColors || !style.usePaletteColorForCardBackground) return fallback;
+    if (style.customCardBackgroundColor) return colorToCss(style.customCardBackgroundColor);
     var colors = (paletteColors || []).filter(function (c) { return c != null; });
     var index = clamp(Math.round(Number(style.paletteBackgroundColorIndex) || 0), 0, 4);
     return colors[index] || fallback;
@@ -555,7 +560,19 @@
       ctx.clip();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(bitmap, target.left, target.top, target.width(), target.height());
+      if (assets.logoTintColor) {
+        var tinted = document.createElement('canvas');
+        tinted.width = imageWidth(bitmap);
+        tinted.height = imageHeight(bitmap);
+        var tintedContext = tinted.getContext('2d');
+        tintedContext.drawImage(bitmap, 0, 0);
+        tintedContext.globalCompositeOperation = 'source-in';
+        tintedContext.fillStyle = assets.logoTintColor;
+        tintedContext.fillRect(0, 0, tinted.width, tinted.height);
+        ctx.drawImage(tinted, target.left, target.top, target.width(), target.height());
+      } else {
+        ctx.drawImage(bitmap, target.left, target.top, target.width(), target.height());
+      }
       ctx.restore();
       return target;
     }
@@ -645,6 +662,24 @@
     drawTextBaseline(ctx, row.value, x, labelBaseline + valueOffset, valuePaint, maxWidth);
   }
 
+  function wrapTextAtWords(text, paint, maxWidth, maxLines) {
+    var words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    var lines = [], current = '';
+    words.forEach(function (word) {
+      var candidate = current ? current + ' ' + word : word;
+      if (!current || paint.measureText(candidate) <= maxWidth) current = candidate;
+      else { lines.push(current); current = word; }
+    });
+    if (current) lines.push(current);
+    if (lines.length <= maxLines) return lines.map(function (line) { return ellipsize(line, paint, maxWidth); });
+    return lines.slice(0, maxLines).map(function (line, index) {
+      return index === maxLines - 1
+        ? ellipsize([line].concat(lines.slice(maxLines)).join(' '), paint, maxWidth)
+        : line;
+    });
+  }
+
   function drawLogoIfPresent(ctx, rect, assets, textColor, anchor, fitMode) {
     if (fitMode === undefined) fitMode = 'Height';
     if (!assets.hasLogo) return null;
@@ -695,8 +730,8 @@
       var rows = toDisplayRows(info, true).slice(0, 6);
       var startX = (logoActual !== null ? logoActual.right : bar.left) + pad;
       var availableWidth = Math.max(bar.right - startX - pad, w * 0.35);
-      var labelPaint = medium(scaled(h * 0.012, settings), rgb(96, 98, 94));
-      var valuePaint = medium(scaled(h * 0.0165, settings), rgb(20, 21, 20));
+      var labelPaint = medium(scaled(h * 0.012, settings), assets.cardContentColor);
+      var valuePaint = medium(scaled(h * 0.0165, settings), assets.cardContentColor);
 
       if (rows.length > 0) {
         var columns = Math.min(rows.length, 3);
@@ -746,8 +781,8 @@
       var captionTop = h * (1 - MINIMAL_CAPTION_RATIO);
       var captionHeight = h * MINIMAL_CAPTION_RATIO;
       var pad = w * 0.045;
-      var titlePaint = medium(scaled(h * 0.024, settings), rgb(24, 25, 24));
-      var bodyPaint = regular(scaled(h * 0.0155, settings), rgb(78, 80, 76));
+      var titlePaint = medium(scaled(h * 0.024, settings), assets.cardContentColor);
+      var bodyPaint = regular(scaled(h * 0.0155, settings), assets.cardContentColor);
       var logoWidth = Math.min(w * 0.12, captionHeight * 1.05);
       var logoBox = RectF(w - pad - logoWidth, captionTop + captionHeight * 0.24, w - pad, captionTop + captionHeight * 0.76);
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(28, 29, 28), 'End');
@@ -782,7 +817,7 @@
   /* --- BottomSpecBarRenderer --- */
   var BOTTOM_BAR_RATIO = 0.10;
   var BottomSpecBarRenderer = makeRenderer({
-    backgroundColor: function () { return rgb(236, 238, 235); },
+    backgroundColor: function () { return rgb(35, 38, 38); },
     logoBackgroundTone: function () { return 'Dark'; },
     photoBounds: function (bounds) {
       return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * BOTTOM_BAR_RATIO);
@@ -791,14 +826,14 @@
       var w = bounds.width();
       var h = bounds.height();
       var top = h * (1 - BOTTOM_BAR_RATIO);
-      fillRect(ctx, 0, top, w, h, rgb(35, 38, 38));
+      fillRect(ctx, 0, top, w, h, assets.cardBackgroundColor);
       var pad = w * 0.035;
       var primaryRows = toDisplayRows(info, false).filter(function (row) {
         return row.label === 'Housing' || row.label === 'Switch' || row.label === 'Keycap';
       }).slice(0, 3);
-      var labelPaint = regular(scaled(h * 0.0105, settings), argb(180, 255, 255, 255));
-      var valuePaint = medium(scaled(h * 0.0165, settings), COLOR_WHITE);
-      var detailPaint = regular(scaled(h * 0.0138, settings, settings.nicknameEmphasis), argb(220, 255, 255, 255));
+      var labelPaint = regular(scaled(h * 0.0105, settings), assets.cardContentColor);
+      var valuePaint = medium(scaled(h * 0.0165, settings), assets.cardContentColor);
+      var detailPaint = regular(scaled(h * 0.0138, settings, settings.nicknameEmphasis), assets.cardContentColor);
       detailPaint.align = 'right';
 
       if (primaryRows.length > 0) {
@@ -839,8 +874,8 @@
       var w = bounds.width();
       var h = bounds.height();
       var pad = Math.min(w, h) * 0.025;
-      var titlePaint = medium(scaled(h * 0.017, settings), COLOR_WHITE);
-      var subPaint = regular(scaled(h * 0.011, settings, settings.nicknameEmphasis), argb(220, 255, 255, 255));
+      var titlePaint = medium(scaled(h * 0.017, settings), assets.cardContentColor);
+      var subPaint = regular(scaled(h * 0.011, settings, settings.nicknameEmphasis), assets.cardContentColor);
       var cardScale = 1.15;
       var maxCardWidth = w * 0.48;
       var minCardWidth = (title === null && isBlank(subtitle)) ? w * 0.092 : w * 0.195;
@@ -932,9 +967,9 @@
       var pad = w * 0.055;
       var logoWidth = Math.min(w * 0.14, h * 0.105);
       var logoBox = RectF(w - pad - logoWidth, footerTop + h * 0.025, w - pad, footerTop + h * 0.09);
-      var titlePaint = medium(scaled(h * 0.028, settings), rgb(24, 24, 23));
-      var specPaint = regular(scaled(h * 0.015, settings), rgb(70, 72, 69));
-      var signaturePaint = medium(scaled(h * 0.014, settings, settings.nicknameEmphasis), rgb(88, 86, 80));
+      var titlePaint = medium(scaled(h * 0.028, settings), assets.cardContentColor);
+      var specPaint = regular(scaled(h * 0.015, settings), assets.cardContentColor);
+      var signaturePaint = medium(scaled(h * 0.014, settings, settings.nicknameEmphasis), assets.cardContentColor);
       signaturePaint.align = 'right';
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(28, 28, 27), 'End');
       var textRight = logoActual !== null ? logoActual.left - pad * 1.5 : (w - pad);
@@ -985,8 +1020,8 @@
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, COLOR_WHITE, 'Start');
       var startX = (logoActual !== null ? logoActual.right : strip.left) + pad;
       var rowRight = colors.length > 0 ? w * 0.68 : w - pad;
-      var labelPaint = regular(scaled(h * 0.0105, settings), argb(180, 255, 255, 255));
-      var valuePaint = medium(scaled(h * 0.0168, settings), COLOR_WHITE);
+      var labelPaint = regular(scaled(h * 0.0105, settings), assets.cardContentColor);
+      var valuePaint = medium(scaled(h * 0.0168, settings), assets.cardContentColor);
       if (rows.length > 0) {
         var columnWidth = Math.max(rowRight - startX, w * 0.25) / rows.length;
         for (var index = 0; index < rows.length; index++) {
@@ -1021,8 +1056,8 @@
       var h = bounds.height();
       var railLeft = w * (1 - SIDE_RAIL_RATIO);
       var rail = RectF(railLeft, 0, w, h);
-      fillRect(ctx, rail.left, rail.top, rail.right, rail.bottom, rgb(250, 250, 247));
-      fillRect(ctx, rail.left, 0, rail.left + 2, h, rgb(217, 218, 214));
+      fillRect(ctx, rail.left, rail.top, rail.right, rail.bottom, assets.cardBackgroundColor);
+      fillRect(ctx, rail.left, 0, rail.left + 2, h, assets.cardContentColor);
       var pad = w * 0.028;
       var maxLogoWidth = rail.width() * 0.72;
       var maxLogoHeight = h * 0.105;
@@ -1035,17 +1070,21 @@
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(22, 23, 23), 'Center', 'Inside');
       var title = displayTitleOrNull(info);
       var rows = rowsExcludingTitle(toDisplayRows(info, true), title).slice(0, 5);
-      var titlePaint = medium(scaled(h * 0.024, settings), rgb(24, 25, 24));
-      var labelPaint = regular(scaled(h * 0.0115, settings), rgb(96, 98, 94));
-      var valuePaint = medium(scaled(h * 0.0155, settings), rgb(32, 33, 32));
+      var titlePaint = medium(scaled(h * 0.024, settings), assets.cardContentColor);
+      var labelPaint = regular(scaled(h * 0.0115, settings), assets.cardContentColor);
+      var valuePaint = medium(scaled(h * 0.0155, settings), assets.cardContentColor);
       var cursorY = (logoActual !== null ? logoActual.bottom : rail.top) + (assets.hasLogo ? h * 0.06 : h * 0.075);
       if (title !== null) {
         drawTextBaseline(ctx, title, rail.left + pad, cursorY, titlePaint, rail.width() - pad * 2);
         cursorY += h * 0.075;
       }
       for (var i = 0; i < rows.length; i++) {
-        drawInfoRow(ctx, rows[i], rail.left + pad, cursorY, rail.width() - pad * 2, labelPaint, valuePaint, h * 0.028);
-        cursorY += h * 0.095;
+        var valueLines = wrapTextAtWords(rows[i].value, valuePaint, rail.width() - pad * 2, 2);
+        drawTextBaseline(ctx, rows[i].label.toUpperCase(), rail.left + pad, cursorY, labelPaint, rail.width() - pad * 2);
+        for (var lineIndex = 0; lineIndex < valueLines.length; lineIndex++) {
+          drawTextBaseline(ctx, valueLines[lineIndex], rail.left + pad, cursorY + h * (0.028 + lineIndex * 0.024), valuePaint, rail.width() - pad * 2);
+        }
+        cursorY += h * (valueLines.length > 1 ? 0.115 : 0.095);
       }
       drawPaletteChipsInRect(
         ctx,
@@ -1077,13 +1116,13 @@
       var w = bounds.width();
       var h = bounds.height();
       var header = RectF(0, 0, w, h * TOP_HEADER_RATIO);
-      fillRect(ctx, header.left, header.top, header.right, header.bottom, rgb(250, 250, 247));
+      fillRect(ctx, header.left, header.top, header.right, header.bottom, assets.cardBackgroundColor);
       var pad = w * 0.035;
       var logoWidth = Math.min(w * 0.11, header.height() * 0.58);
       var logoBox = RectF(pad, header.centerY() - logoWidth / 2, pad + logoWidth, header.centerY() + logoWidth / 2);
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(24, 25, 24), 'Start');
-      var titlePaint = medium(scaled(h * 0.025, settings), rgb(22, 23, 22));
-      var bodyPaint = regular(scaled(h * 0.0145, settings), rgb(72, 74, 70));
+      var titlePaint = medium(scaled(h * 0.025, settings), assets.cardContentColor);
+      var bodyPaint = regular(scaled(h * 0.0145, settings), assets.cardContentColor);
       var textX = (logoActual !== null ? logoActual.right : header.left) + pad * (logoActual === null ? 1 : 0.78);
       var right = w - pad;
       var title = displayTitleOrNull(info);
@@ -1109,7 +1148,7 @@
         'End',
         isBlank(detail) ? settings.paletteColorCount : 3
       );
-      fillRect(ctx, 0, header.bottom - 2, w, header.bottom, rgb(219, 220, 216));
+      fillRect(ctx, 0, header.bottom - 2, w, header.bottom, assets.cardContentColor);
     },
   });
 
@@ -1131,9 +1170,9 @@
       var logoSize = Math.min(w * 0.12, h * 0.08);
       var logoBox = RectF(w - pad - logoSize, labelTop, w - pad, labelTop + logoSize);
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(24, 24, 23), 'End');
-      var titlePaint = medium(scaled(h * 0.026, settings), rgb(31, 31, 29));
-      var bodyPaint = regular(scaled(h * 0.015, settings), rgb(80, 80, 75));
-      var labelPaint = regular(scaled(h * 0.012, settings), rgb(110, 106, 98));
+      var titlePaint = medium(scaled(h * 0.026, settings), assets.cardContentColor);
+      var bodyPaint = regular(scaled(h * 0.015, settings), assets.cardContentColor);
+      var labelPaint = regular(scaled(h * 0.012, settings), assets.cardContentColor);
       var textRight = logoActual !== null ? logoActual.left - pad * 1.6 : (w - pad);
       var title = displayTitleOrNull(info);
       var details = detailTextExcluding(title, [
@@ -1190,7 +1229,7 @@
       var ticketTop = h * (1 - TICKET_RATIO);
       var pad = w * 0.035;
       var ticket = RectF(pad, ticketTop + h * 0.018, w - pad, h - h * 0.018);
-      drawRoundRect(ctx, ticket, ticket.height() * 0.18, rgb(251, 250, 246));
+      drawRoundRect(ctx, ticket, ticket.height() * 0.18, assets.cardBackgroundColor);
       var logoSize = Math.min(ticket.height() * 0.58, w * 0.1);
       var logoBox = RectF(
         ticket.left + ticket.height() * 0.2,
@@ -1199,8 +1238,8 @@
         ticket.centerY() + logoSize / 2
       );
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(27, 28, 27), 'Start');
-      var titlePaint = medium(scaled(h * 0.0195, settings), rgb(22, 23, 22));
-      var bodyPaint = regular(scaled(h * 0.013, settings), rgb(74, 76, 72));
+      var titlePaint = medium(scaled(h * 0.0195, settings), assets.cardContentColor);
+      var bodyPaint = regular(scaled(h * 0.013, settings), assets.cardContentColor);
       var textX = (logoActual !== null ? logoActual.right : ticket.left) + ticket.height() * 0.2;
       var paletteLeft = ticket.right - ticket.width() * 0.24;
       var right = colors.length === 0
@@ -1251,9 +1290,9 @@
       var logoSize = Math.min(w * 0.09, h * 0.07);
       var logoBox = RectF(w - pad - logoSize, footerTop + h * 0.035, w - pad, footerTop + h * 0.035 + logoSize);
       var logoActual = drawLogoIfPresent(ctx, logoBox, assets, rgb(20, 21, 20), 'End');
-      var titlePaint = medium(scaled(h * 0.026, settings), rgb(20, 21, 20));
-      var bodyPaint = regular(scaled(h * 0.0145, settings), rgb(82, 84, 80));
-      var nickPaint = medium(scaled(h * 0.019, settings, settings.nicknameEmphasis), rgb(36, 37, 35));
+      var titlePaint = medium(scaled(h * 0.026, settings), assets.cardContentColor);
+      var bodyPaint = regular(scaled(h * 0.0145, settings), assets.cardContentColor);
+      var nickPaint = medium(scaled(h * 0.019, settings, settings.nicknameEmphasis), assets.cardContentColor);
       var textRight = logoActual !== null
         ? logoActual.left - pad
         : (colors.length > 0 ? logoBox.left - pad : w - pad);
@@ -1340,21 +1379,21 @@
   // KeyxifCanvasRenderer.resolveLogoDrawable — tone-based contrast variant chains.
   // assets.logoVariants = { default, black, white }; assets.logoImage acts as the
   // "default" variant when logoVariants is absent (or when its default is missing).
-  function resolveLogoImage(assets, tone, autoSelectVariant) {
+  function resolveLogoForBackground(assets, backgroundColor) {
     var variants = assets.logoVariants || null;
     var def = (variants && variants.default) || assets.logoImage || null;
     var black = (variants && variants.black) || null;
     var white = (variants && variants.white) || null;
-    if (variants === null) return def;
-    if (!autoSelectVariant) {
-      return def || black || white;
+    if (assets.logoColorPolicy === 'AUTO_MONO_TINT') {
+      return {
+        image: def || black || white,
+        tintColor: isDarkColor(backgroundColor) ? COLOR_WHITE : COLOR_BLACK,
+      };
     }
-    switch (tone) {
-      case 'Light': return black || def || white;
-      case 'Dark': return white || def || black;
-      case 'Mixed':
-      default: return def || black || white;
-    }
+    return {
+      image: isDarkColor(backgroundColor) ? (white || def || black) : (black || def || white),
+      tintColor: null,
+    };
   }
 
   // KeyxifCanvasRenderer.drawTemplatePhoto — CenterCrop / FitCenter with clip.
@@ -1449,6 +1488,11 @@
       settings,
       renderStyle
     );
+    var contentColor = readableContentColor(backgroundColor);
+    if (settings.showPaletteColors && renderStyle.usePaletteColorForText) {
+      var textColorIndex = clamp(Math.round(Number(renderStyle.paletteTextColorIndex) || 0), 0, 4);
+      contentColor = renderStyle.customTextColor ? colorToCss(renderStyle.customTextColor) : (paletteColors[textColorIndex] || contentColor);
+    }
 
     // canvas.drawColor(cardBackgroundColor)
     fillRect(ctx, 0, 0, canvas.width, canvas.height, backgroundColor);
@@ -1460,12 +1504,11 @@
     // Logo resolution (customLogoUri -> customLogoImage; preset -> tone variant)
     var logoDisabled = !!buildInfo.logoDisabled;
     var logoBitmap = null;
-    var logoTone = settings.showPaletteColors && renderStyle.usePaletteColorForCardBackground
-      ? (isDarkColor(backgroundColor) ? 'Dark' : 'Light')
-      : templateRenderer.logoBackgroundTone();
+    var resolvedLogo = resolveLogoForBackground(inputAssets, backgroundColor);
+    var hasCustomLogo = !!buildInfo.customLogoImage;
     if (!logoDisabled) {
       logoBitmap = buildInfo.customLogoImage
-        || resolveLogoImage(inputAssets, logoTone, settings.autoSelectLogoContrastVariant)
+        || resolvedLogo.image
         || null;
     }
     var logoLabel = logoDisabled ? '' : String(inputAssets.logoLabel || '');
@@ -1478,7 +1521,8 @@
       paletteColors: paletteColors,
       hasLogo: hasLogo,
       cardBackgroundColor: backgroundColor,
-      cardContentColor: readableContentColor(backgroundColor),
+      cardContentColor: contentColor,
+      logoTintColor: hasCustomLogo ? null : resolvedLogo.tintColor,
     };
 
     drawPhotoOverlayLogoIfNeeded(ctx, photoBounds, logoDisabled ? null : inputAssets.photoOverlayImage);

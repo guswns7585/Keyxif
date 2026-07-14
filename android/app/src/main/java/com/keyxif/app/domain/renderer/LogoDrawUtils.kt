@@ -4,6 +4,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import kotlin.math.min
 
@@ -55,7 +57,10 @@ object LogoDrawUtils {
             val radius = min(target.width(), target.height()) * 0.12f
             val path = Path().apply { addRoundRect(target, radius, radius, Path.Direction.CW) }
             canvas.clipPath(path)
-            canvas.drawBitmap(bitmap, null, target, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG))
+            val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
+                assets.logoTintColor?.let { colorFilter = PorterDuffColorFilter(it, PorterDuff.Mode.SRC_IN) }
+            }
+            canvas.drawBitmap(bitmap, null, target, bitmapPaint)
             canvas.restoreToCount(saveCount)
             return target
         }
