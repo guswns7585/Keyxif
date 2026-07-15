@@ -45,11 +45,17 @@ class KeyxifCanvasRenderer(
         var output: Bitmap? = null
         var logoBitmap: Bitmap? = null
         try {
-            val rendered = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+            val templateRenderer = renderers.getValue(template)
+            val layout = calculateRenderLayout(
+                spec = templateRenderer.layoutSpec(),
+                imageWidth = source.width,
+                imageHeight = source.height,
+                maxLongSide = maxLongSide,
+            )
+            val rendered = Bitmap.createBitmap(layout.finalWidth, layout.finalHeight, Bitmap.Config.ARGB_8888)
             output = rendered
             val canvas = Canvas(rendered)
             val bounds = RectF(0f, 0f, rendered.width.toFloat(), rendered.height.toFloat())
-            val templateRenderer = renderers.getValue(template)
             val fallbackBackgroundColor = templateRenderer.backgroundColor()
             val cardBackgroundColor = CanvasRenderUtils.cardBackgroundColor(
                 fallback = fallbackBackgroundColor,
@@ -60,7 +66,12 @@ class KeyxifCanvasRenderer(
                 customCardBackgroundColor = photo.renderStyle.customCardBackgroundColor,
             )
             canvas.drawColor(cardBackgroundColor)
-            val photoBounds = templateRenderer.photoBounds(bounds)
+            val photoBounds = RectF(
+                layout.photoRect.left,
+                layout.photoRect.top,
+                layout.photoRect.right,
+                layout.photoRect.bottom,
+            )
             drawTemplatePhoto(
                 canvas = canvas,
                 bitmap = source,

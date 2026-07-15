@@ -18314,7 +18314,7 @@ window.KEYXIF_PRESETS = {
    "name": "Baionlenja",
    "drawable": null,
    "whiteDrawable": "logo_baionlenja_w",
-   "blackDrawable": "logo_baionlanja_b",
+   "blackDrawable": "logo_baionlenja_b",
    "aliases": [
     "Baionlenja"
    ]
@@ -20169,7 +20169,10 @@ window.KEYXIF_PRESETS.logos.push(
   {"id":"wuque","name":"Wuque Studio","drawable":null,"whiteDrawable":"logo_wuque_w","blackDrawable":"logo_wuque_b","aliases":["WS","Wuque","우케","우크"]},
   {"id":"tkd","name":"TKD","drawable":null,"whiteDrawable":"logo_tkd_w","blackDrawable":"logo_tkd_b","aliases":["TKD","티케이디","TheKeyDotCo"]},
   {"id":"fox","name":"FOX","drawable":"logo_fox","whiteDrawable":null,"blackDrawable":null,"aliases":["Fox"]},
-  {"id":"neo","name":"Neo","drawable":null,"whiteDrawable":"logo_neo_w","blackDrawable":"logo_neo_b","aliases":["Neo Studio","Neo"]}
+  {"id":"neo","name":"Neo","drawable":null,"whiteDrawable":"logo_neo_w","blackDrawable":"logo_neo_b","aliases":["Neo Studio","Neo"]},
+  {"id":"iv-works","name":"IV Works","drawable":null,"whiteDrawable":"logo_iv_works_w","blackDrawable":"logo_iv_works_b","aliases":["IVWorks","IV Works"]},
+  {"id":"niuniu","name":"NiuNiu","drawable":null,"whiteDrawable":"logo_niuniu_w","blackDrawable":"logo_niuniu_b","aliases":["Niu Niu","Niuniu"]},
+  {"id":"grit","name":"Grit","drawable":null,"whiteDrawable":"logo_grit_w","blackDrawable":"logo_grit_b","aliases":["Grit"]}
 );
 
 // Keep automatic tinting opt-in. Colored or ambiguous marks always use their prepared variants.

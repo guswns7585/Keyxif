@@ -120,7 +120,7 @@ jobs:
             "latestVersionName": "${VERSION_NAME}",
             "minRequiredVersionCode": 1,
             "title": "새 버전이 있습니다",
-            "message": "GitHub Releases에서 새 Keyxif APK를 받을 수 있습니다.",
+            "message": "Keyxif ${VERSION_NAME} 업데이트를 설치할 수 있습니다.",
             "apkUrl": "https://github.com/${OWNER_REPO}/releases/download/${TAG_NAME}/${APK_NAME}",
             "releaseNoteUrl": "https://github.com/${OWNER_REPO}/releases/tag/${TAG_NAME}",
             "forceUpdate": false

@@ -48,6 +48,9 @@ object PresetData {
         const val WUQUE = "wuque"
         const val FOX = "fox"
         const val NEO = "neo"
+        const val IV_WORKS = "iv-works"
+        const val NIUNIU = "niuniu"
+        const val GRIT = "grit"
     }
 
     object VendorIds {
@@ -94,7 +97,7 @@ object PresetData {
         logo(LogoIds.MACHINA, "Machina", default = R.drawable.logo_machina, aliases = arrayOf("Machina", "Machina")),
         logo(LogoIds.NUXROS, "Nuxros", white = R.drawable.logo_nuxros_w, black = R.drawable.logo_nuxros_b, aliases = arrayOf("Nuxros", "Nuxros")),
         logo(LogoIds.KBDFANS, "KBDfans", white = R.drawable.logo_kbdfans_w, black = R.drawable.logo_kbdfans_b, aliases = arrayOf("Kbdfans", "Kbdfans")),
-        logo(LogoIds.BAIONLENJA, "Baionlenja", white = R.drawable.logo_baionlenja_w, black = R.drawable.logo_baionlanja_b, aliases = arrayOf("Baionlenja", "Baionlenja")),
+        logo(LogoIds.BAIONLENJA, "Baionlenja", white = R.drawable.logo_baionlenja_w, black = R.drawable.logo_baionlenja_b, aliases = arrayOf("Baionlenja")),
         logo(LogoIds.OWLAB, "Owlab", white = R.drawable.logo_owlab_w, black = R.drawable.logo_owlab_b, aliases = arrayOf("Owlab", "Owlab")),
         logo(LogoIds.JJW, "JJW", white = R.drawable.logo_jjw_w, black = R.drawable.logo_jjw_b, aliases = arrayOf("Jjw", "Jjw")),
         logo(LogoIds.MERISI, "Merisi", white = R.drawable.logo_merisi_w, black = R.drawable.logo_merisi_b, aliases = arrayOf("Merisi")),
@@ -116,6 +119,9 @@ object PresetData {
         logo(LogoIds.TKD, "TKD", white = R.drawable.logo_tkd_w, black = R.drawable.logo_tkd_b, aliases = arrayOf("TheKeyDotCo", "티케이디")),
         logo(LogoIds.FOX, "FOX", default = R.drawable.logo_fox, aliases = arrayOf("Fox")),
         logo(LogoIds.NEO, "Neo", white = R.drawable.logo_neo_w, black = R.drawable.logo_neo_b, aliases = arrayOf("Neo Studio", "Neo")),
+        logo(LogoIds.IV_WORKS, "IV Works", white = R.drawable.logo_iv_works_w, black = R.drawable.logo_iv_works_b, aliases = arrayOf("IVWorks", "IV Works")),
+        logo(LogoIds.NIUNIU, "NiuNiu", white = R.drawable.logo_niuniu_w, black = R.drawable.logo_niuniu_b, aliases = arrayOf("Niu Niu", "Niuniu")),
+        logo(LogoIds.GRIT, "Grit", white = R.drawable.logo_grit_w, black = R.drawable.logo_grit_b, aliases = arrayOf("Grit")),
     ).sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
     val vendors = (

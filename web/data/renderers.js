@@ -695,8 +695,29 @@
   function makeRenderer(overrides) {
     var r = {
       backgroundColor: function () { return DEFAULT_BACKGROUND; },
-      photoBounds: function (bounds) { return copyRect(bounds); },
-      photoPlacement: function () { return 'CenterCrop'; },
+      layoutSpec: function () {
+        return {
+          mode: 'OverlayOnPhoto',
+          leftInsetFraction: 0,
+          topInsetFraction: 0,
+          rightInsetFraction: 0,
+          bottomInsetFraction: 0,
+        };
+      },
+      photoBounds: function (bounds) {
+        var spec = this.layoutSpec();
+        var left = Number(spec.leftInsetFraction) || 0;
+        var top = Number(spec.topInsetFraction) || 0;
+        var right = Number(spec.rightInsetFraction) || 0;
+        var bottom = Number(spec.bottomInsetFraction) || 0;
+        return RectF(
+          bounds.left + bounds.width() * left,
+          bounds.top + bounds.height() * top,
+          bounds.right - bounds.width() * right,
+          bounds.bottom - bounds.height() * bottom
+        );
+      },
+      photoPlacement: function () { return 'FitCenter'; },
       logoBackgroundTone: function () { return 'Mixed'; },
       draw: function (ctx, bounds, info, assets, settings) {},
     };
@@ -715,9 +736,7 @@
   var ClassicFrameRenderer = makeRenderer({
     backgroundColor: function () { return rgb(247, 247, 243); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * CLASSIC_BAR_RATIO);
-    },
+    layoutSpec: function () { return { mode: 'ExternalBottomCard', bottomInsetFraction: CLASSIC_BAR_RATIO }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
       var h = bounds.height();
@@ -772,9 +791,7 @@
   var MinimalCaptionRenderer = makeRenderer({
     backgroundColor: function () { return rgb(252, 252, 249); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * MINIMAL_CAPTION_RATIO);
-    },
+    layoutSpec: function () { return { mode: 'ExternalBottomCard', bottomInsetFraction: MINIMAL_CAPTION_RATIO }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
       var h = bounds.height();
@@ -819,9 +836,7 @@
   var BottomSpecBarRenderer = makeRenderer({
     backgroundColor: function () { return rgb(35, 38, 38); },
     logoBackgroundTone: function () { return 'Dark'; },
-    photoBounds: function (bounds) {
-      return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * BOTTOM_BAR_RATIO);
-    },
+    layoutSpec: function () { return { mode: 'ExternalBottomCard', bottomInsetFraction: BOTTOM_BAR_RATIO }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
       var h = bounds.height();
@@ -955,10 +970,14 @@
   var PosterMarginRenderer = makeRenderer({
     backgroundColor: function () { return rgb(248, 248, 245); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      var side = bounds.width() * 0.035;
-      var top = bounds.height() * 0.035;
-      return RectF(bounds.left + side, bounds.top + top, bounds.right - side, bounds.bottom - bounds.height() * 0.17);
+    layoutSpec: function () {
+      return {
+        mode: 'ExternalFrame',
+        leftInsetFraction: 0.035,
+        topInsetFraction: 0.035,
+        rightInsetFraction: 0.035,
+        bottomInsetFraction: 0.17,
+      };
     },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
@@ -1047,10 +1066,7 @@
   var SideSpecRailRenderer = makeRenderer({
     backgroundColor: function () { return rgb(243, 244, 241); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      var railWidth = bounds.width() * SIDE_RAIL_RATIO;
-      return RectF(bounds.left, bounds.top, bounds.right - railWidth, bounds.bottom);
-    },
+    layoutSpec: function () { return { mode: 'ExternalSideCard', rightInsetFraction: SIDE_RAIL_RATIO }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
       var h = bounds.height();
@@ -1109,9 +1125,7 @@
   var TopNameplateRenderer = makeRenderer({
     backgroundColor: function () { return rgb(247, 247, 243); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      return RectF(bounds.left, bounds.top + bounds.height() * TOP_HEADER_RATIO, bounds.right, bounds.bottom);
-    },
+    layoutSpec: function () { return { mode: 'ExternalFrame', topInsetFraction: TOP_HEADER_RATIO }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
       var h = bounds.height();
@@ -1156,10 +1170,14 @@
   var MuseumMatRenderer = makeRenderer({
     backgroundColor: function () { return rgb(246, 245, 239); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      var side = bounds.width() * 0.055;
-      var top = bounds.height() * 0.055;
-      return RectF(bounds.left + side, bounds.top + top, bounds.right - side, bounds.bottom - bounds.height() * 0.23);
+    layoutSpec: function () {
+      return {
+        mode: 'ExternalFrame',
+        leftInsetFraction: 0.055,
+        topInsetFraction: 0.055,
+        rightInsetFraction: 0.055,
+        bottomInsetFraction: 0.23,
+      };
     },
     draw: function (ctx, bounds, info, assets, settings) {
       var w = bounds.width();
@@ -1210,9 +1228,7 @@
   var CompactTicketRenderer = makeRenderer({
     backgroundColor: function () { return rgb(235, 236, 232); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * TICKET_RATIO);
-    },
+    layoutSpec: function () { return { mode: 'ExternalBottomCard', bottomInsetFraction: TICKET_RATIO }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var title = displayTitleOrNull(info);
       var detail = detailTextExcluding(title, [
@@ -1268,9 +1284,7 @@
   var CleanSignatureRenderer = makeRenderer({
     backgroundColor: function () { return rgb(250, 250, 247); },
     logoBackgroundTone: function () { return 'Light'; },
-    photoBounds: function (bounds) {
-      return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * 0.155);
-    },
+    layoutSpec: function () { return { mode: 'ExternalBottomCard', bottomInsetFraction: 0.155 }; },
     draw: function (ctx, bounds, info, assets, settings) {
       var lines = [];
       var v;
@@ -1359,6 +1373,7 @@
     templates.push({
       id: TEMPLATE_ORDER[ti].id,
       backgroundTone: TEMPLATE_ORDER[ti].renderer.logoBackgroundTone(),
+      layoutSpec: TEMPLATE_ORDER[ti].renderer.layoutSpec(),
     });
   }
 
@@ -1450,6 +1465,47 @@
     ctx.restore();
   }
 
+  function calculateRenderLayout(spec, imageWidthPx, imageHeightPx, maxLongSide) {
+    spec = spec || {};
+    var left = Number(spec.leftInsetFraction) || 0;
+    var top = Number(spec.topInsetFraction) || 0;
+    var right = Number(spec.rightInsetFraction) || 0;
+    var bottom = Number(spec.bottomInsetFraction) || 0;
+    var photoWidthFraction = 1 - left - right;
+    var photoHeightFraction = 1 - top - bottom;
+    if (imageWidthPx <= 0 || imageHeightPx <= 0 || photoWidthFraction <= 0 || photoHeightFraction <= 0) {
+      throw new Error('KeyxifRenderer: invalid render layout');
+    }
+    var naturalWidth = imageWidthPx / photoWidthFraction;
+    var naturalHeight = imageHeightPx / photoHeightFraction;
+    var limit = Number(maxLongSide);
+    var outputScale = Number.isFinite(limit) && limit > 0
+      ? Math.min(1, limit / Math.max(naturalWidth, naturalHeight))
+      : 1;
+    var finalWidth = Math.max(1, Math.round(naturalWidth * outputScale));
+    var finalHeight = Math.max(1, Math.round(naturalHeight * outputScale));
+    var photoRect = RectF(
+      finalWidth * left,
+      finalHeight * top,
+      finalWidth * (1 - right),
+      finalHeight * (1 - bottom)
+    );
+    var mode = spec.mode || 'OverlayOnPhoto';
+    var cardRect = null;
+    if (mode === 'ExternalBottomCard') {
+      cardRect = RectF(0, photoRect.bottom, finalWidth, finalHeight);
+    } else if (mode === 'ExternalSideCard') {
+      cardRect = RectF(photoRect.right, 0, finalWidth, finalHeight);
+    }
+    return {
+      finalWidth: finalWidth,
+      finalHeight: finalHeight,
+      photoRect: photoRect,
+      cardRect: cardRect,
+      mode: mode,
+    };
+  }
+
   function render(options) {
     var image = options.image;
     var buildInfo = options.buildInfo || {};
@@ -1469,10 +1525,16 @@
       throw new Error('KeyxifRenderer: image has no size');
     }
 
-    // Bitmap.createBitmap(source.width, source.height, ARGB_8888)
+    var layout = calculateRenderLayout(
+      templateRenderer.layoutSpec(),
+      iw,
+      ih,
+      options.maxLongSide
+    );
+
     var canvas = document.createElement('canvas');
-    canvas.width = iw;
-    canvas.height = ih;
+    canvas.width = layout.finalWidth;
+    canvas.height = layout.finalHeight;
     var ctx = canvas.getContext('2d');
     ctx.textBaseline = 'alphabetic';
     var bounds = RectF(0, 0, canvas.width, canvas.height);
@@ -1498,7 +1560,7 @@
     fillRect(ctx, 0, 0, canvas.width, canvas.height, backgroundColor);
 
     // Photo placement into photoBounds with clipping
-    var photoBounds = templateRenderer.photoBounds(bounds);
+    var photoBounds = layout.photoRect;
     drawTemplatePhoto(ctx, image, photoBounds, templateRenderer.photoPlacement());
 
     // Logo resolution (customLogoUri -> customLogoImage; preset -> tone variant)
@@ -1569,6 +1631,7 @@
       logoFitInside: logoFitInside,
       logoFitHeight: logoFitHeight,
       drawTemplatePhoto: drawTemplatePhoto,
+      calculateRenderLayout: calculateRenderLayout,
     },
   };
 })();

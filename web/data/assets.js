@@ -82,3 +82,37 @@ Object.assign(window.KEYXIF_ASSETS, {
   "logo_wuque_w": "assets/logo_wuque_w.png",
   "logo_wuque_b": "assets/logo_wuque_b.png"
 });
+
+// File-backed replacements stay in sync with the Android drawable catalog.
+Object.assign(window.KEYXIF_ASSETS, {
+  "logo_baionlenja_b": "assets/logo_baionlenja_b.png",
+  "logo_baionlenja_w": "assets/logo_baionlenja_w.png",
+  "logo_bowl_b": "assets/logo_bowl_b.png",
+  "logo_bowl_w": "assets/logo_bowl_w.png",
+  "logo_fox": "assets/logo_fox.png",
+  "logo_graystudio_b": "assets/logo_graystudio_b.png",
+  "logo_graystudio_w": "assets/logo_graystudio_w.png",
+  "logo_iv_works_b": "assets/logo_iv_works_b.png",
+  "logo_iv_works_w": "assets/logo_iv_works_w.png",
+  "logo_kbdfans_b": "assets/logo_kbdfans_b.png",
+  "logo_kbdfans_w": "assets/logo_kbdfans_w.png",
+  "logo_matrix_b": "assets/logo_matrix_b.png",
+  "logo_matrix_w": "assets/logo_matrix_w.png",
+  "logo_mode_b": "assets/logo_mode_b.png",
+  "logo_mode_w": "assets/logo_mode_w.png",
+  "logo_neo_b": "assets/logo_neo_b.png",
+  "logo_neo_w": "assets/logo_neo_w.png",
+  "logo_niuniu_b": "assets/logo_niuniu_b.png",
+  "logo_niuniu_w": "assets/logo_niuniu_w.png",
+  "logo_novelkeys": "assets/logo_novelkeys.png",
+  "logo_orion_b": "assets/logo_orion_b.png",
+  "logo_orion_w": "assets/logo_orion_w.png",
+  "logo_owlab_b": "assets/logo_owlab_b.png",
+  "logo_owlab_w": "assets/logo_owlab_w.png",
+  "logo_realforce_b": "assets/logo_realforce_b.png",
+  "logo_realforce_w": "assets/logo_realforce_w.png",
+  "logo_tgr_b": "assets/logo_tgr_b.png",
+  "logo_tgr_w": "assets/logo_tgr_w.png",
+  "logo_tkd_b": "assets/logo_tkd_b.png",
+  "logo_tkd_w": "assets/logo_tkd_w.png"
+});

@@ -602,6 +602,7 @@
         var buildInfo = Object.assign({}, photo.buildInfo, { customLogoImage: assets.customLogoImage || null });
         var canvas = window.KeyxifRenderer.render({
           image: bmp, buildInfo: buildInfo, template: template, settings: settings,
+          maxLongSide: maxLongSide,
           renderStyle: photo.renderStyle || defaultRenderStyle(),
           assets: {
             logoImage: assets.logoVariants ? null : (assets.logoImage || null),

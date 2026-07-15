@@ -10,9 +10,19 @@ import com.keyxif.app.domain.model.TemplateBackgroundTone
 interface TemplateRenderer {
     fun backgroundColor(): Int = Color.rgb(18, 18, 18)
 
-    fun photoBounds(bounds: RectF): RectF = RectF(bounds)
+    fun layoutSpec(): TemplateLayoutSpec = TemplateLayoutSpec()
 
-    fun photoPlacement(): PhotoPlacement = PhotoPlacement.CenterCrop
+    fun photoBounds(bounds: RectF): RectF {
+        val spec = layoutSpec()
+        return RectF(
+            bounds.left + bounds.width() * spec.leftInsetFraction,
+            bounds.top + bounds.height() * spec.topInsetFraction,
+            bounds.right - bounds.width() * spec.rightInsetFraction,
+            bounds.bottom - bounds.height() * spec.bottomInsetFraction,
+        )
+    }
+
+    fun photoPlacement(): PhotoPlacement = PhotoPlacement.FitCenter
 
     fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Mixed
 

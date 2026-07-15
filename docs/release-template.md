@@ -1,12 +1,12 @@
 ## Keyxif Release
 
 ### Changes
-- Add per-photo palette analysis with auto-center, free-form area selection, and painted-mask modes.
-- Add custom card-background and text colors with HEX input and color pickers.
-- Improve template contrast, text layout, logo rendering, and the Bottom Spec Bar background behavior.
-- Expand built-in housing, switch, keycap, plate, and searchable logo presets.
-- Add Safari-compatible WEBP export and improve photo import, batch export, draft persistence, and preview reliability.
-- Keep Android and Web behavior and preset data synchronized.
+- Preserve the full source photo in templates with external build-information cards.
+- Expand the final canvas for bottom bars, side rails, margins, and framed templates without cropping.
+- Apply the final long-side limit to the complete rendered image consistently in previews and exports.
+- Add Grit, IV Works, and NiuNiu logos and refresh the built-in logo artwork.
+- Automatically synchronize all Android logo assets with the Web build.
+- Add Android and Web regression tests for render layouts and logo asset resolution.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

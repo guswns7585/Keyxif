@@ -26,10 +26,10 @@ import kotlin.math.min
 class ClassicFrameRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(247, 247, 243)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * BAR_RATIO)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalBottomCard,
+        bottomInsetFraction = BAR_RATIO,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -89,10 +89,10 @@ class ClassicFrameRenderer : TemplateRenderer {
 class MinimalCaptionRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(252, 252, 249)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * CAPTION_RATIO)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalBottomCard,
+        bottomInsetFraction = CAPTION_RATIO,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -143,10 +143,10 @@ class MinimalCaptionRenderer : TemplateRenderer {
 class BottomSpecBarRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(35, 38, 38)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Dark
-
-    override fun photoBounds(bounds: RectF): RectF {
-        return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * BAR_RATIO)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalBottomCard,
+        bottomInsetFraction = BAR_RATIO,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -287,12 +287,13 @@ class CornerMarkRenderer : TemplateRenderer {
 class PosterMarginRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(248, 248, 245)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        val side = bounds.width() * 0.035f
-        val top = bounds.height() * 0.035f
-        return RectF(bounds.left + side, bounds.top + top, bounds.right - side, bounds.bottom - bounds.height() * 0.17f)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalFrame,
+        leftInsetFraction = 0.035f,
+        topInsetFraction = 0.035f,
+        rightInsetFraction = 0.035f,
+        bottomInsetFraction = 0.17f,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -382,11 +383,10 @@ class DarkGlassStripRenderer : TemplateRenderer {
 class SideSpecRailRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(243, 244, 241)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        val railWidth = bounds.width() * RAIL_RATIO
-        return RectF(bounds.left, bounds.top, bounds.right - railWidth, bounds.bottom)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalSideCard,
+        rightInsetFraction = RAIL_RATIO,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -450,10 +450,10 @@ class SideSpecRailRenderer : TemplateRenderer {
 class TopNameplateRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(247, 247, 243)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        return RectF(bounds.left, bounds.top + bounds.height() * HEADER_RATIO, bounds.right, bounds.bottom)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalFrame,
+        topInsetFraction = HEADER_RATIO,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -503,12 +503,13 @@ class TopNameplateRenderer : TemplateRenderer {
 class MuseumMatRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(246, 245, 239)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        val side = bounds.width() * 0.055f
-        val top = bounds.height() * 0.055f
-        return RectF(bounds.left + side, bounds.top + top, bounds.right - side, bounds.bottom - bounds.height() * 0.23f)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalFrame,
+        leftInsetFraction = 0.055f,
+        topInsetFraction = 0.055f,
+        rightInsetFraction = 0.055f,
+        bottomInsetFraction = 0.23f,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val w = bounds.width()
@@ -558,10 +559,10 @@ class MuseumMatRenderer : TemplateRenderer {
 class CompactTicketRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(235, 236, 232)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * TICKET_RATIO)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalBottomCard,
+        bottomInsetFraction = TICKET_RATIO,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val title = info.displayTitleOrNull()
@@ -619,10 +620,10 @@ class CompactTicketRenderer : TemplateRenderer {
 class CleanSignatureRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.rgb(250, 250, 247)
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Light
-
-    override fun photoBounds(bounds: RectF): RectF {
-        return RectF(bounds.left, bounds.top, bounds.right, bounds.bottom - bounds.height() * 0.155f)
-    }
+    override fun layoutSpec() = TemplateLayoutSpec(
+        mode = TemplateLayoutMode.ExternalBottomCard,
+        bottomInsetFraction = 0.155f,
+    )
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val lines = listOfNotNull(
