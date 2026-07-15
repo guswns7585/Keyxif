@@ -147,7 +147,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
         snackbarHostState.showSnackbar(message)
     }
 
-    if (state.showDraftRestorePrompt) {
+    if (state.showDraftRestorePrompt && !state.showUpdateDialog) {
         DraftRestoreDialog(
             lastUpdatedAt = state.draftLastUpdatedAt,
             onRestore = viewModel::restoreDraftSession,

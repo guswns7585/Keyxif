@@ -39,7 +39,7 @@ class UpdateDownloadWorker(
             return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "APK URL이 비어 있습니다."))
         }
 
-        val updateDir = File(applicationContext.cacheDir, "updates").apply {
+        val updateDir = File(applicationContext.filesDir, "updates").apply {
             deleteRecursively()
             mkdirs()
         }

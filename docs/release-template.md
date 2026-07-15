@@ -1,12 +1,11 @@
 ## Keyxif Release
 
 ### Changes
-- Preserve the full source photo in templates with external build-information cards.
-- Expand the final canvas for bottom bars, side rails, margins, and framed templates without cropping.
-- Apply the final long-side limit to the complete rendered image consistently in previews and exports.
-- Add Grit, IV Works, and NiuNiu logos and refresh the built-in logo artwork.
-- Automatically synchronize all Android logo assets with the Web build.
-- Add Android and Web regression tests for render layouts and logo asset resolution.
+- Check for updates once on every cold app launch so newly published versions are not missed.
+- Improve package-installer compatibility and remove a restricted install intent flag.
+- Resume APK installation automatically after the user grants unknown-source permission.
+- Track the current download job and keep the verified APK in app-private storage until installation.
+- Verify that release signing, package identity, presets, settings, and recent-search storage remain compatible across updates.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

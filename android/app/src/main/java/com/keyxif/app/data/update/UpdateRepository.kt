@@ -17,11 +17,6 @@ class UpdateRepository(
         return preferences.getLong(KEY_LAST_CHECKED_AT, 0L).takeIf { it > 0L }
     }
 
-    fun shouldAutoCheck(now: Long = System.currentTimeMillis()): Boolean {
-        val lastCheckedAt = lastCheckedAt() ?: return true
-        return now - lastCheckedAt >= AUTO_CHECK_INTERVAL_MS
-    }
-
     fun markChecked(timeMillis: Long = System.currentTimeMillis()) {
         preferences.edit().putLong(KEY_LAST_CHECKED_AT, timeMillis).apply()
     }
@@ -75,6 +70,5 @@ class UpdateRepository(
 
     private companion object {
         const val KEY_LAST_CHECKED_AT = "last_checked_at"
-        const val AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
     }
 }

@@ -38,6 +38,13 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::keyxifViewModel.isInitialized) {
+            keyxifViewModel.onHostResumed()
+        }
+    }
+
     private fun handleShareIntent(intent: Intent?) {
         val uris = IntentShareUtils.extractImageUris(intent, contentResolver)
         if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) {

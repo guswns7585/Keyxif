@@ -131,7 +131,9 @@ class KeyxifViewModel(
     private var autoSaveReady = false
     private var lastCompletedExportWorkId: UUID? = null
     private var lastCompletedUpdateWorkId: UUID? = null
+    private var activeUpdateWorkId: UUID? = null
     private var autoUpdateCheckAttempted = false
+    private var awaitingUnknownSourcesPermission = false
     private var paletteAnalysisJob: Job? = null
 
     private val _uiState = MutableStateFlow(KeyxifUiState())
@@ -217,6 +219,7 @@ class KeyxifViewModel(
             versionName = info.latestVersionName,
             versionCode = info.latestVersionCode.toLong(),
         )
+        activeUpdateWorkId = request.id
         workManager.enqueueUniqueWork(
             UpdateDownloadWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.REPLACE,
@@ -253,12 +256,32 @@ class KeyxifViewModel(
             data = Uri.parse("package:${BuildConfig.APPLICATION_ID}")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        runCatching {
+        awaitingUnknownSourcesPermission = true
+        val opened = runCatching {
             getApplication<Application>().startActivity(intent)
         }.onFailure {
+            awaitingUnknownSourcesPermission = false
             openUrl("package:${BuildConfig.APPLICATION_ID}", "설치 권한 설정을 열 수 없습니다.")
-        }
+        }.isSuccess
         _uiState.update { it.copy(showUnknownSourcesDialog = false) }
+        if (!opened) return
+    }
+
+    fun onHostResumed() {
+        if (!awaitingUnknownSourcesPermission) return
+        awaitingUnknownSourcesPermission = false
+        val app = getApplication<Application>()
+        val path = uiState.value.updateDownloadState.downloadedApkPath
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || app.packageManager.canRequestPackageInstalls()) {
+            if (!path.isNullOrBlank()) installDownloadedUpdate(path)
+        } else {
+            _uiState.update {
+                it.copy(
+                    showUnknownSourcesDialog = true,
+                    uiMessage = "이 출처의 앱 설치 권한을 허용해야 업데이트할 수 있습니다.",
+                )
+            }
+        }
     }
 
     fun openSupportEmail() {
@@ -343,14 +366,12 @@ class KeyxifViewModel(
         val draft = pendingDraftSession ?: return
         viewModelScope.launch {
             autoSaveReady = false
-            settingsRepository.update { draft.settings }
             _uiState.update { state ->
                 state.copy(
                     photos = draft.photoItems.map(::validatedRestoredPhoto),
                     selectedTemplate = draft.selectedTemplate,
                     currentStep = normalizeStep(draft.currentStep),
                     selectedPhotoId = draft.selectedPhotoId,
-                    settings = draft.settings,
                     isSettingsOpen = false,
                     showDraftRestorePrompt = false,
                     draftLastUpdatedAt = draft.lastUpdatedAt,
@@ -359,7 +380,7 @@ class KeyxifViewModel(
             }
             pendingDraftSession = null
             autoSaveReady = true
-            schedulePaletteAnalysis(draft.settings)
+            schedulePaletteAnalysis(uiState.value.settings)
         }
     }
 
@@ -1065,10 +1086,12 @@ class KeyxifViewModel(
                         workManager.getWorkInfosForUniqueWork(UpdateDownloadWorker.UNIQUE_WORK_NAME).get()
                     }.getOrDefault(emptyList())
                 }
-                val active = infos.firstOrNull {
+                val requestedWork = activeUpdateWorkId?.let { id -> infos.firstOrNull { it.id == id } }
+                val active = requestedWork?.takeUnless { it.state.isFinished } ?: infos.firstOrNull {
                     it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
                 }
-                val finished = infos.firstOrNull { it.state.isFinished }
+                val finished = requestedWork?.takeIf { it.state.isFinished }
+                    ?: infos.firstOrNull { it.state.isFinished }
                 when {
                     active != null -> {
                         val progress = active.progress.getInt(UpdateDownloadWorker.KEY_PROGRESS_PERCENT, -1)
@@ -1121,6 +1144,7 @@ class KeyxifViewModel(
     private fun applyFinishedUpdateDownload(info: WorkInfo) {
         if (lastCompletedUpdateWorkId == info.id) return
         lastCompletedUpdateWorkId = info.id
+        if (activeUpdateWorkId == info.id) activeUpdateWorkId = null
         val output = info.outputData
         val apkPath = output.getString(UpdateDownloadWorker.KEY_APK_PATH)
         val error = output.getString(UpdateDownloadWorker.KEY_ERROR_MESSAGE)
@@ -1281,7 +1305,6 @@ class KeyxifViewModel(
             )
         }
         if (updateRepository.isPlaceholderUrl(effectiveUpdateJsonUrl(settings))) return
-        if (!updateRepository.shouldAutoCheck()) return
         checkForUpdate(manual = false, settingsOverride = settings)
     }
 
@@ -1390,8 +1413,6 @@ class KeyxifViewModel(
             return
         }
 
-        if (!manual && !updateRepository.shouldAutoCheck()) return
-
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -1404,10 +1425,10 @@ class KeyxifViewModel(
                 )
             }
             val result = runCatching { updateRepository.fetchUpdateInfo(updateJsonUrl) }
-            val checkedAt = System.currentTimeMillis()
-            updateRepository.markChecked(checkedAt)
             result
                 .onSuccess { info ->
+                    val checkedAt = System.currentTimeMillis()
+                    updateRepository.markChecked(checkedAt)
                     val requiresUpdate = info.latestVersionCode > BuildConfig.VERSION_CODE ||
                         info.minRequiredVersionCode > BuildConfig.VERSION_CODE
                     val downloadedPath = uiState.value.updateDownloadState.downloadedApkPath
@@ -1445,7 +1466,7 @@ class KeyxifViewModel(
                         state.copy(
                             updateCheckState = state.updateCheckState.copy(
                                 isChecking = false,
-                                lastCheckedAt = checkedAt,
+                                lastCheckedAt = updateRepository.lastCheckedAt(),
                                 statusMessage = null,
                                 errorMessage = "업데이트 확인 실패: $message",
                             ),
@@ -1515,6 +1536,7 @@ class KeyxifViewModel(
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun installDownloadedUpdate(apkPath: String) {
         val app = getApplication<Application>()
         val apkFile = File(apkPath)
@@ -1548,23 +1570,25 @@ class KeyxifViewModel(
             "${BuildConfig.APPLICATION_ID}.fileprovider",
             apkFile,
         )
-        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-            setDataAndType(uri, APK_MIME_TYPE)
-            clipData = ClipData.newUri(app.contentResolver, "Keyxif update APK", uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-            putExtra(Intent.EXTRA_RETURN_RESULT, false)
-        }
-        grantApkReadPermission(app, uri, intent)
-        val opened = runCatching {
-            app.startActivity(intent)
-        }.onFailure { error ->
-            _uiState.update {
-                it.copy(uiMessage = "설치 화면을 열 수 없습니다: ${error.message ?: "알 수 없는 오류"}")
+        val installIntents = listOf(Intent.ACTION_VIEW, Intent.ACTION_INSTALL_PACKAGE).map { action ->
+            Intent(action).apply {
+                setDataAndType(uri, APK_MIME_TYPE)
+                clipData = ClipData.newUri(app.contentResolver, "Keyxif update APK", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-        }.isSuccess
+        }
+        var lastError: Throwable? = null
+        val opened = installIntents.any { intent ->
+            grantApkReadPermission(app, uri, intent)
+            runCatching { app.startActivity(intent) }
+                .onFailure { lastError = it }
+                .isSuccess
+        }
         if (!opened) {
+            _uiState.update {
+                it.copy(uiMessage = "설치 화면을 열 수 없습니다: ${lastError?.message ?: "지원되는 설치 앱이 없습니다."}")
+            }
             val fallbackUrl = uiState.value.updateCheckState.latestInfo?.apkUrl.orEmpty()
             if (fallbackUrl.isNotBlank()) {
                 openUrl(fallbackUrl, "설치 화면을 열 수 없어 브라우저 다운로드로 전환합니다.")
