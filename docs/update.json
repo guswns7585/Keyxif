@@ -4,7 +4,7 @@
   "minRequiredVersionCode": 1,
   "title": "새 버전이 있습니다",
   "message": "Keyxif 1.1.1 업데이트를 설치할 수 있습니다.",
-  "apkUrl": "https://github.com/guswns7585/keyxif/releases/download/v1.1.1/keyxif-1.1.1.apk",
-  "releaseNoteUrl": "https://github.com/guswns7585/keyxif/releases/tag/v1.1.1",
+  "apkUrl": "https://github.com/guswns7585/Keyxif/releases/download/v1.1.1/keyxif-1.1.1.apk",
+  "releaseNoteUrl": "https://github.com/guswns7585/Keyxif/releases/tag/v1.1.1",
   "forceUpdate": false
 }
