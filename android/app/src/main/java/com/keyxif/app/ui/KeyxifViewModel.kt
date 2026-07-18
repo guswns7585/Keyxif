@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -22,6 +23,7 @@ import com.keyxif.app.data.exported.ExportedImageRepository
 import com.keyxif.app.data.backup.KeyxifBackupRepository
 import com.keyxif.app.data.repository.AppSettingsRepository
 import com.keyxif.app.data.repository.BuildPresetRepository
+import com.keyxif.app.data.repository.ColorPresetRepository
 import com.keyxif.app.data.repository.CustomTemplateRepository
 import com.keyxif.app.data.repository.DraftSessionRepository
 import com.keyxif.app.data.repository.PresetChoice
@@ -49,6 +51,7 @@ import com.keyxif.app.domain.model.AppStep
 import com.keyxif.app.domain.model.BuildPreset
 import com.keyxif.app.domain.model.CardStyle
 import com.keyxif.app.domain.model.CardTemplate
+import com.keyxif.app.domain.model.ColorPreset
 import com.keyxif.app.domain.model.CustomTemplate
 import com.keyxif.app.domain.model.CustomTemplateEditorState
 import com.keyxif.app.domain.model.CustomTemplateEditorTab
@@ -119,6 +122,8 @@ data class KeyxifUiState(
     val currentStep: AppStep = AppStep.Photos,
     val photos: List<PhotoItem> = emptyList(),
     val selectedPhotoId: String? = null,
+    val isBatchSelectionMode: Boolean = false,
+    val selectedBatchPhotoIds: Set<String> = emptySet(),
     val selectedExportPhotoIds: Set<String> = emptySet(),
     val expandedExportPhotoId: String? = null,
     val selectedTemplate: CardTemplate = CardTemplate.ClassicFrame,
@@ -131,6 +136,8 @@ data class KeyxifUiState(
     val isGalleryOpen: Boolean = false,
     val exportedImages: List<ExportedImage> = emptyList(),
     val buildPresets: List<BuildPreset> = emptyList(),
+    val colorPresets: List<ColorPreset> = emptyList(),
+    val recentCustomColors: List<Int> = emptyList(),
     val presetQuery: String = "",
     val recentHousing: List<String> = emptyList(),
     val recentSwitches: List<String> = emptyList(),
@@ -187,6 +194,7 @@ class KeyxifViewModel(
     private val recentStore = RecentStore(application)
     private val presetRepository = PresetRepository()
     private val buildPresetRepository = BuildPresetRepository(application)
+    private val colorPresetRepository = ColorPresetRepository(application)
     private val customTemplateRepository = CustomTemplateRepository(application)
     private val settingsRepository = AppSettingsRepository(application)
     private val draftSessionRepository = DraftSessionRepository(application)
@@ -618,6 +626,8 @@ class KeyxifViewModel(
             state.copy(
                 photos = updated,
                 selectedExportPhotoIds = state.selectedExportPhotoIds - id,
+                selectedBatchPhotoIds = state.selectedBatchPhotoIds - id,
+                isBatchSelectionMode = (state.selectedBatchPhotoIds - id).isNotEmpty(),
                 expandedExportPhotoId = state.expandedExportPhotoId?.takeIf { it != id },
                 selectedPhotoId = state.selectedPhotoId
                     ?.takeIf { selected -> updated.any { it.id == selected } }
@@ -633,6 +643,8 @@ class KeyxifViewModel(
                 photos = emptyList(),
                 selectedPhotoId = null,
                 selectedExportPhotoIds = emptySet(),
+                selectedBatchPhotoIds = emptySet(),
+                isBatchSelectionMode = false,
                 expandedExportPhotoId = null,
                 currentStep = AppStep.Photos,
                 exportProgress = ExportProgress(),
@@ -677,6 +689,48 @@ class KeyxifViewModel(
         _uiState.update { it.copy(selectedExportPhotoIds = emptySet()) }
     }
 
+    fun setBatchSelectionMode(enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                isBatchSelectionMode = enabled,
+                selectedBatchPhotoIds = if (enabled) it.selectedBatchPhotoIds else emptySet(),
+            )
+        }
+    }
+
+    fun setBatchPhotoSelected(id: String, selected: Boolean) {
+        _uiState.update { state ->
+            if (state.photos.none { it.id == id }) return@update state
+            val next = if (selected) state.selectedBatchPhotoIds + id else state.selectedBatchPhotoIds - id
+            state.copy(isBatchSelectionMode = true, selectedBatchPhotoIds = next)
+        }
+    }
+
+    fun toggleBatchPhotoSelection(id: String) {
+        _uiState.update { state ->
+            if (state.photos.none { it.id == id }) return@update state
+            val next = if (id in state.selectedBatchPhotoIds) {
+                state.selectedBatchPhotoIds - id
+            } else {
+                state.selectedBatchPhotoIds + id
+            }
+            state.copy(isBatchSelectionMode = true, selectedBatchPhotoIds = next)
+        }
+    }
+
+    fun selectAllBatchPhotos() {
+        _uiState.update { state ->
+            state.copy(
+                isBatchSelectionMode = true,
+                selectedBatchPhotoIds = state.photos.map { it.id }.toSet(),
+            )
+        }
+    }
+
+    fun clearBatchSelection() {
+        _uiState.update { it.copy(selectedBatchPhotoIds = emptySet()) }
+    }
+
     fun setExpandedExportPhoto(photoId: String?) {
         _uiState.update { state ->
             if (photoId != null && state.photos.none { it.id == photoId }) return@update state
@@ -693,6 +747,113 @@ class KeyxifViewModel(
         val photoId = uiState.value.selectedPhoto?.id ?: return
         updatePhoto(photoId) { photo ->
             photo.copy(renderStyle = transform(photo.renderStyle))
+        }
+    }
+
+    fun applySelectedRenderStyleToBatch() {
+        val current = uiState.value
+        val source = current.selectedPhoto ?: return
+        val style = source.renderStyle.resolvedPaletteColors(source.analysisResult.paletteColors)
+        val targets = current.selectedBatchPhotoIds
+        if (targets.isEmpty()) return
+        _uiState.update { state ->
+            state.copy(
+                photos = state.photos.map { photo ->
+                    if (photo.id in targets) photo.copy(renderStyle = style) else photo
+                },
+            )
+        }
+        _uiState.update { it.copy(uiMessage = "선택한 사진 ${targets.size}장에 색상 설정을 적용했습니다.") }
+    }
+
+    fun applySelectedRenderStyleToAll() {
+        val source = uiState.value.selectedPhoto ?: return
+        val style = source.renderStyle.resolvedPaletteColors(source.analysisResult.paletteColors)
+        _uiState.update { state ->
+            state.copy(photos = state.photos.map { it.copy(renderStyle = style) })
+        }
+        _uiState.update { it.copy(uiMessage = "모든 사진에 색상 설정을 적용했습니다.") }
+    }
+
+    fun saveColorPreset(name: String) {
+        val source = uiState.value.selectedPhoto ?: return
+        val style = source.renderStyle.resolvedPaletteColors(source.analysisResult.paletteColors)
+        viewModelScope.launch(Dispatchers.IO) {
+            colorPresetRepository.save(name, style)
+            val presets = colorPresetRepository.getAll()
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        colorPresets = presets,
+                        uiMessage = "색상 프리셋을 저장했습니다.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun applyColorPreset(preset: ColorPreset) {
+        updateSelectedPhotoRenderStyle { preset.renderStyle }
+        _uiState.update { it.copy(uiMessage = "색상 프리셋을 적용했습니다.") }
+    }
+
+    fun autoApplyReadablePaletteColorsToAll() {
+        _uiState.update { state ->
+            var appliedCount = 0
+            val photos = state.photos.map { photo ->
+                val style = photo.analysisResult.paletteColors
+                    .take(state.settings.paletteColorCount.coerceIn(3, 5))
+                    .autoReadableRenderStyle()
+                if (style != null) {
+                    appliedCount += 1
+                    photo.copy(renderStyle = style)
+                } else {
+                    photo
+                }
+            }
+            state.copy(
+                photos = photos,
+                uiMessage = if (appliedCount > 0) {
+                    "사진 ${appliedCount}장에 자동 색상 설정을 적용했습니다."
+                } else {
+                    "자동 적용할 검출 색상이 없습니다."
+                },
+            )
+        }
+    }
+
+    fun deleteColorPreset(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            colorPresetRepository.delete(id)
+            val presets = colorPresetRepository.getAll()
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        colorPresets = presets,
+                        uiMessage = "색상 프리셋을 삭제했습니다.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun rememberCustomColor(color: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            colorPresetRepository.rememberCustomColor(color)
+            val colors = colorPresetRepository.getRecentCustomColors()
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(recentCustomColors = colors) }
+            }
+        }
+    }
+
+    fun deleteRecentCustomColor(color: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            colorPresetRepository.deleteRecentCustomColor(color)
+            val colors = colorPresetRepository.getRecentCustomColors()
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(recentCustomColors = colors) }
+            }
         }
     }
 
@@ -781,6 +942,22 @@ class KeyxifViewModel(
         val info = uiState.value.selectedPhoto?.buildInfo ?: return
         _uiState.update { state ->
             state.copy(photos = state.photos.map { it.copy(buildInfo = info) })
+        }
+        rememberBuildInfo(info)
+    }
+
+    fun applyBuildInfoToBatch() {
+        val current = uiState.value
+        val info = current.selectedPhoto?.buildInfo ?: return
+        val targets = current.selectedBatchPhotoIds
+        if (targets.isEmpty()) return
+        _uiState.update { state ->
+            state.copy(
+                photos = state.photos.map { photo ->
+                    if (photo.id in targets) photo.copy(buildInfo = info) else photo
+                },
+                uiMessage = "선택한 사진 ${targets.size}장에 빌드 정보를 적용했습니다.",
+            )
         }
         rememberBuildInfo(info)
     }
@@ -2788,6 +2965,8 @@ class KeyxifViewModel(
         _uiState.update {
             it.copy(
                 buildPresets = buildPresetRepository.getAll(),
+                colorPresets = colorPresetRepository.getAll(),
+                recentCustomColors = colorPresetRepository.getRecentCustomColors(),
                 customTemplates = customTemplateRepository.getAll(),
                 recentHousing = recentStore.recentHousing(),
                 recentSwitches = recentStore.recentSwitches(),
@@ -2901,4 +3080,96 @@ class KeyxifViewModel(
         const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         const val CUSTOM_TEMPLATE_HISTORY_LIMIT = 40
     }
+}
+
+private fun PhotoRenderStyle.resolvedPaletteColors(paletteColors: List<Int>): PhotoRenderStyle {
+    val backgroundColor = customCardBackgroundColor
+        ?: paletteColors.getOrNull(paletteBackgroundColorIndex.coerceIn(0, 4))
+            ?.takeIf { usePaletteColorForCardBackground }
+    val textColor = customTextColor
+        ?: paletteColors.getOrNull(paletteTextColorIndex.coerceIn(0, 4))
+            ?.takeIf { usePaletteColorForText }
+    return copy(
+        customCardBackgroundColor = backgroundColor,
+        customTextColor = textColor,
+    )
+}
+
+private fun List<Int>.autoReadableRenderStyle(): PhotoRenderStyle? {
+    val candidates = filter { Color.alpha(it) != 0 }
+    if (candidates.isEmpty()) return null
+    val background = candidates.withIndex().maxBy { (index, color) ->
+        paletteBackgroundScore(color, index, candidates.size)
+    }.value
+    val text = candidates
+        .filter { it != background }
+        .withIndex()
+        .maxByOrNull { (index, color) -> paletteTextScore(background, color, index, candidates.size) }
+        ?.value
+        ?: if (contrastRatio(background, Color.BLACK) >= contrastRatio(background, Color.WHITE)) {
+            Color.BLACK
+        } else {
+            Color.WHITE
+        }
+    return PhotoRenderStyle(
+        usePaletteColorForCardBackground = true,
+        customCardBackgroundColor = background,
+        usePaletteColorForText = true,
+        customTextColor = text,
+    )
+}
+
+private fun paletteBackgroundScore(color: Int, index: Int, count: Int): Double {
+    val luminance = relativeLuminance(color)
+    val representativeness = 1.0 - (index.toDouble() / maxOf(1, count - 1)) * 0.35
+    val midTone = 1.0 - kotlin.math.abs(luminance - 0.5) * 2.0
+    val saturation = saturation(color)
+    val bestTextContrast = maxOf(contrastRatio(color, Color.BLACK), contrastRatio(color, Color.WHITE))
+    val extremePenalty = if (luminance < 0.08 || luminance > 0.92) 0.42 else 0.0
+    val neutralPenalty = if (saturation < 0.08) 0.08 else 0.0
+    return representativeness * 0.38 +
+        midTone.coerceIn(0.0, 1.0) * 0.32 +
+        saturation * 0.18 +
+        (bestTextContrast / 21.0).coerceIn(0.0, 1.0) * 0.12 -
+        neutralPenalty -
+        extremePenalty
+}
+
+private fun paletteTextScore(background: Int, text: Int, index: Int, count: Int): Double {
+    val representativeness = 1.0 - (index.toDouble() / maxOf(1, count - 1)) * 0.2
+    val rawContrast = contrastRatio(background, text)
+    val contrast = (rawContrast / 21.0).coerceIn(0.0, 1.0)
+    val luminance = relativeLuminance(text)
+    val saturation = saturation(text)
+    val notTooExtreme = (1.0 - kotlin.math.abs(luminance - 0.5) * 1.05).coerceIn(0.0, 1.0)
+    val lowContrastPenalty = ((2.35 - rawContrast).coerceAtLeast(0.0) / 2.35) * 0.34
+    val neutralPenalty = if (saturation < 0.08 && (luminance < 0.16 || luminance > 0.84)) 0.48 else 0.0
+    return contrast * 0.30 + saturation * 0.46 + representativeness * 0.12 + notTooExtreme * 0.12 -
+        lowContrastPenalty -
+        neutralPenalty
+}
+
+private fun saturation(color: Int): Double {
+    val r = Color.red(color) / 255.0
+    val g = Color.green(color) / 255.0
+    val b = Color.blue(color) / 255.0
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    return if (max == 0.0) 0.0 else (max - min) / max
+}
+
+private fun contrastRatio(first: Int, second: Int): Double {
+    val l1 = relativeLuminance(first)
+    val l2 = relativeLuminance(second)
+    return (maxOf(l1, l2) + 0.05) / (minOf(l1, l2) + 0.05)
+}
+
+private fun relativeLuminance(color: Int): Double {
+    fun channel(value: Int): Double {
+        val normalized = value / 255.0
+        return if (normalized <= 0.03928) normalized / 12.92 else Math.pow((normalized + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * channel(Color.red(color)) +
+        0.7152 * channel(Color.green(color)) +
+        0.0722 * channel(Color.blue(color))
 }

@@ -1,15 +1,19 @@
 package com.keyxif.app.ui.screens
 
 import android.graphics.Color
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -26,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -53,6 +58,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.keyxif.app.domain.model.AppSettings
+import com.keyxif.app.domain.model.ColorPreset
 import com.keyxif.app.domain.model.MaskStroke
 import com.keyxif.app.domain.model.NormalizedPoint
 import com.keyxif.app.domain.model.NormalizedQuad
@@ -73,13 +80,26 @@ import com.keyxif.app.ui.KeyxifUiState
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun PaletteScreen(
     state: KeyxifUiState,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onSelectPhoto: (String) -> Unit,
     onRenderStyleChange: ((PhotoRenderStyle) -> PhotoRenderStyle) -> Unit,
+    onApplyRenderStyleToSelected: () -> Unit,
+    onApplyRenderStyleToAll: () -> Unit,
+    onAutoApplyReadablePaletteColorsToAll: () -> Unit,
+    onSetBatchSelectionMode: (Boolean) -> Unit,
+    onToggleBatchPhotoSelection: (String) -> Unit,
+    onSetBatchPhotoSelected: (String, Boolean) -> Unit,
+    onSelectAllBatchPhotos: () -> Unit,
+    onClearBatchSelection: () -> Unit,
+    onSaveColorPreset: (String) -> Unit,
+    onApplyColorPreset: (ColorPreset) -> Unit,
+    onDeleteColorPreset: (String) -> Unit,
+    onRememberCustomColor: (Int) -> Unit,
+    onDeleteRecentCustomColor: (Int) -> Unit,
     onAnalysisModeChange: (PaletteAnalysisMode) -> Unit,
     onAnalysisQuadChange: (NormalizedQuad) -> Unit,
     onCenterRatioChange: (Float) -> Unit,
@@ -104,6 +124,7 @@ fun PaletteScreen(
     }
     var isEraser by remember(photo?.id) { mutableStateOf(false) }
     var brushSize by remember(photo?.id) { mutableFloatStateOf(0.06f) }
+    var colorPresetName by remember { mutableStateOf("") }
     var centerRatio by remember(photo?.id, result?.analysisCenterCropRatio) {
         mutableFloatStateOf(result?.analysisCenterCropRatio ?: 0.75f)
     }
@@ -116,18 +137,75 @@ fun PaletteScreen(
         Text("사진마다 분석 영역과 카드 배경색을 따로 설정합니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         if (state.photos.isNotEmpty()) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyRow(
+                contentPadding = PaddingValues(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 items(state.photos, key = { it.id }) { item ->
                     val selected = item.id == photo?.id
+                    val picked = item.id in state.selectedBatchPhotoIds
                     Surface(
-                        modifier = Modifier.size(72.dp).then(
-                            if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)) else Modifier,
-                        ),
+                        modifier = Modifier
+                            .size(72.dp)
+                            .graphicsLayer {
+                                val scale = if (picked) 1.055f else 1f
+                                scaleX = scale
+                                scaleY = scale
+                                transformOrigin = TransformOrigin.Center
+                            },
                         shape = RoundedCornerShape(6.dp),
-                        onClick = { onSelectPhoto(item.id) },
+                        border = when {
+                            picked -> BorderStroke(3.dp, androidx.compose.ui.graphics.Color(0xFFFFD400))
+                            selected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                            else -> null
+                        },
+                        shadowElevation = if (picked) 4.dp else 0.dp,
                     ) {
-                        AsyncImage(model = item.uri, contentDescription = null, contentScale = ContentScale.Crop)
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .combinedClickable(
+                                    onClick = {
+                                        if (state.isBatchSelectionMode) onToggleBatchPhotoSelection(item.id) else onSelectPhoto(item.id)
+                                    },
+                                    onLongClick = { onSetBatchPhotoSelected(item.id, true) },
+                                ),
+                        ) {
+                            AsyncImage(
+                                model = item.uri,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
                     }
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (state.isBatchSelectionMode) {
+                    TextButton(onClick = onSelectAllBatchPhotos) { Text("전체") }
+                    TextButton(onClick = onClearBatchSelection) { Text("해제") }
+                    TextButton(onClick = { onSetBatchSelectionMode(false) }) { Text("완료") }
+                } else {
+                    OutlinedButton(onClick = { onSetBatchSelectionMode(true) }) { Text("선택") }
+                }
+                Button(
+                    enabled = photo != null && state.selectedBatchPhotoIds.isNotEmpty(),
+                    onClick = onApplyRenderStyleToSelected,
+                ) {
+                    Text("선택 적용")
+                }
+                OutlinedButton(
+                    enabled = state.photos.isNotEmpty(),
+                    onClick = onAutoApplyReadablePaletteColorsToAll,
+                ) {
+                    Text("자동 적용")
+                }
+                OutlinedButton(
+                    enabled = photo != null && state.photos.size > 1,
+                    onClick = onApplyRenderStyleToAll,
+                ) {
+                    Text("전체 적용")
                 }
             }
         }
@@ -223,6 +301,58 @@ fun PaletteScreen(
 
         Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, tonalElevation = 1.dp) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("색상 프리셋", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = colorPresetName,
+                        onValueChange = { colorPresetName = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("프리셋 이름") },
+                    )
+                    Button(
+                        enabled = photo != null,
+                        onClick = {
+                            onSaveColorPreset(colorPresetName)
+                            colorPresetName = ""
+                        },
+                    ) {
+                        Text("저장")
+                    }
+                }
+                if (state.colorPresets.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.colorPresets.take(12).forEach { preset ->
+                            val presetBackground = preset.renderStyle.customCardBackgroundColor
+                                ?: colors.getOrNull(preset.renderStyle.paletteBackgroundColorIndex.coerceIn(0, 4))
+                                ?: Color.WHITE
+                            val presetText = preset.renderStyle.customTextColor
+                                ?: colors.getOrNull(preset.renderStyle.paletteTextColorIndex.coerceIn(0, 4))
+                                ?: Color.BLACK
+                            FilterChip(
+                                selected = false,
+                                onClick = { onApplyColorPreset(preset) },
+                                label = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(16.dp).clip(CircleShape).background(presetBackground.toComposeColor()).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
+                                        Spacer(Modifier.width(4.dp))
+                                        Box(Modifier.size(16.dp).clip(CircleShape).background(presetText.toComposeColor()).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(preset.presetName)
+                                    }
+                                },
+                            )
+                            TextButton(onClick = { onDeleteColorPreset(preset.id) }) {
+                                Text("삭제")
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider()
                 Text("추출된 색상", style = MaterialTheme.typography.titleMedium)
                 if (colors.isEmpty()) {
                     Text(if (photo == null) "먼저 사진을 추가해 주세요." else "추출된 색상이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -255,11 +385,14 @@ fun PaletteScreen(
                     CustomColorSelector(
                         title = "사용자 지정 카드 배경",
                         selectedColor = renderStyle.customCardBackgroundColor,
+                        recentColors = state.recentCustomColors,
                         onColorSelected = { color ->
+                            onRememberCustomColor(color)
                             onRenderStyleChange {
                                 it.copy(customCardBackgroundColor = color, usePaletteColorForCardBackground = true)
                             }
                         },
+                        onRecentColorDeleted = onDeleteRecentCustomColor,
                     )
                     Text("텍스트 색상", style = MaterialTheme.typography.titleSmall)
                     if (colors.isNotEmpty()) {
@@ -289,9 +422,12 @@ fun PaletteScreen(
                     CustomColorSelector(
                         title = "사용자 지정 텍스트 색상",
                         selectedColor = renderStyle.customTextColor,
+                        recentColors = state.recentCustomColors,
                         onColorSelected = { color ->
+                            onRememberCustomColor(color)
                             onRenderStyleChange { it.copy(customTextColor = color, usePaletteColorForText = true) }
                         },
+                        onRecentColorDeleted = onDeleteRecentCustomColor,
                     )
                 }
                 HorizontalDivider()
@@ -329,7 +465,9 @@ fun PaletteScreen(
 private fun CustomColorSelector(
     title: String,
     selectedColor: Int?,
+    recentColors: List<Int>,
     onColorSelected: (Int) -> Unit,
+    onRecentColorDeleted: (Int) -> Unit,
 ) {
     var showColorPicker by remember { mutableStateOf(false) }
     var hexInput by remember(selectedColor) {
@@ -362,14 +500,27 @@ private fun CustomColorSelector(
                 Text("적용")
             }
         }
-        OutlinedButton(onClick = { showColorPicker = true }) {
-            Box(
-                Modifier.size(28.dp).clip(CircleShape)
-                    .background((selectedColor ?: Color.WHITE).toComposeColor())
-                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(onClick = { showColorPicker = true }) {
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape)
+                        .background((selectedColor ?: Color.WHITE).toComposeColor())
+                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("컬러 피커 열기")
+            }
+            RecentCustomColorPalette(
+                colors = recentColors,
+                selectedColor = selectedColor,
+                onColorSelected = onColorSelected,
+                onColorDeleted = onRecentColorDeleted,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(10.dp))
-            Text("컬러 피커 열기")
         }
     }
 
@@ -385,6 +536,118 @@ private fun CustomColorSelector(
         )
     }
 }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RecentCustomColorPalette(
+    colors: List<Int>,
+    selectedColor: Int?,
+    onColorSelected: (Int) -> Unit,
+    onColorDeleted: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (colors.isEmpty()) return
+    if (colors.size >= DropdownRecentColorThreshold) {
+        var expanded by remember { mutableStateOf(false) }
+        Box(modifier = modifier) {
+            OutlinedButton(onClick = { expanded = true }) {
+                Box(
+                    Modifier.size(22.dp).clip(CircleShape)
+                        .background(colors.first().toComposeColor())
+                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("최근 색상 ${colors.size}개")
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                colors.forEach { color ->
+                    Row(
+                        modifier = Modifier
+                            .width(220.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(color.toComposeColor())
+                                .border(
+                                    width = if (selectedColor == color) 3.dp else 1.dp,
+                                    color = if (selectedColor == color) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    },
+                                    shape = CircleShape,
+                                )
+                                .combinedClickable(
+                                    onClick = {
+                                        onColorSelected(color)
+                                        expanded = false
+                                    },
+                                    onLongClick = { onColorDeleted(color) },
+                                ),
+                        )
+                        Text(
+                            text = "#${color.toRgbHex()}",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        TextButton(
+                            onClick = { onColorDeleted(color) },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("삭제", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 2.dp),
+    ) {
+        items(colors, key = { it }) { color ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(color.toComposeColor())
+                        .border(
+                            width = if (selectedColor == color) 3.dp else 1.dp,
+                            color = if (selectedColor == color) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                            shape = CircleShape,
+                        )
+                        .combinedClickable(
+                            onClick = { onColorSelected(color) },
+                            onLongClick = { onColorDeleted(color) },
+                        ),
+                )
+                TextButton(
+                    onClick = { onColorDeleted(color) },
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) {
+                    Text("삭제", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+private const val DropdownRecentColorThreshold = 6
 
 @Composable
 private fun HsvColorPickerDialog(

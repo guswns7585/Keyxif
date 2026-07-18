@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import androidx.core.content.res.ResourcesCompat
+import com.keyxif.app.data.presets.PresetData
 import com.keyxif.app.data.repository.PresetRepository
 import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.BuildFieldFormat
@@ -108,11 +109,20 @@ class KeyxifCanvasRenderer(
                 destination = photoBounds,
                 placement = templateRenderer.photoPlacement(),
             )
-            val logoPreset = if (photo.buildInfo.logoDisabled) null else presetRepository.logoForBuildInfo(photo.buildInfo)
-            val resolvedLogo = LogoRenderResolver.resolveLogoForBackground(logoPreset, cardBackgroundColor)
             val customLogoBitmap = if (photo.buildInfo.logoDisabled) null else photo.buildInfo.customLogoUri?.let { uri ->
                 runCatching { BitmapUtils.decodeOrientedBitmap(context, uri, 512) }.getOrNull()
             }
+            val logoPreset = if (photo.buildInfo.logoDisabled) {
+                null
+            } else {
+                val detectedPreset = presetRepository.logoForBuildInfo(photo.buildInfo)
+                if (photo.buildInfo.customLogoUri != null && customLogoBitmap == null) {
+                    presetRepository.logoPreset(PresetData.LogoIds.KEYXIF) ?: detectedPreset
+                } else {
+                    detectedPreset
+                }
+            }
+            val resolvedLogo = LogoRenderResolver.resolveLogoForBackground(logoPreset, cardBackgroundColor)
             logoBitmap = if (photo.buildInfo.logoDisabled) {
                 null
             } else {
@@ -216,11 +226,20 @@ class KeyxifCanvasRenderer(
                 placement = PhotoPlacement.FitCenter,
             )
 
-            val logoPreset = if (photo.buildInfo.logoDisabled) null else presetRepository.logoForBuildInfo(photo.buildInfo)
-            val resolvedLogo = LogoRenderResolver.resolveLogoForBackground(logoPreset, frameColor)
             val customLogoBitmap = if (photo.buildInfo.logoDisabled) null else photo.buildInfo.customLogoUri?.let { uri ->
                 runCatching { BitmapUtils.decodeOrientedBitmap(context, uri, 512) }.getOrNull()
             }
+            val logoPreset = if (photo.buildInfo.logoDisabled) {
+                null
+            } else {
+                val detectedPreset = presetRepository.logoForBuildInfo(photo.buildInfo)
+                if (photo.buildInfo.customLogoUri != null && customLogoBitmap == null) {
+                    presetRepository.logoPreset(PresetData.LogoIds.KEYXIF) ?: detectedPreset
+                } else {
+                    detectedPreset
+                }
+            }
+            val resolvedLogo = LogoRenderResolver.resolveLogoForBackground(logoPreset, frameColor)
             logoBitmap = if (photo.buildInfo.logoDisabled) {
                 null
             } else {

@@ -162,6 +162,14 @@ data class BuildPreset(
     val updatedAt: Long,
 )
 
+data class ColorPreset(
+    val id: String,
+    val presetName: String,
+    val renderStyle: PhotoRenderStyle,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
 data class ExportedImage(
     val id: String,
     val uri: String,

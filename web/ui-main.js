@@ -30,6 +30,8 @@
     presetSheetQuery: '',
     presetDeleteTarget: null,       // {id, presetName}
     presetNameInput: '',
+    colorPresetNameInput: '',
+    colorPresetPhotoId: null,
     presetNamePhotoId: null,        // 사진 전환 시 프리셋명 리셋
     searchSheet: null,              // { field: 'housing'|'switch'|'keycap', query, hiddenRecents: {} }
     logoSheet: null,                // { query }
@@ -50,6 +52,69 @@
     var t = document.createElement('template');
     t.innerHTML = html;
     return t.content;
+  }
+
+  function selectedBatchCount(state) {
+    return Object.keys(state.selectedBatchPhotoIds || {}).length;
+  }
+
+  function buildBatchPhotoStrip(state, actions, helpers, actionButtons) {
+    var esc = helpers.esc;
+    var selected = window.KeyxifStore.selectedPhoto();
+    var count = selectedBatchCount(state);
+    var wrap = h('<div class="batch-photo-panel' + (state.isBatchSelectionMode ? ' selecting' : '') + '"></div>');
+    var head = h('<div class="row gap8 batch-photo-head"></div>');
+    head.appendChild(h('<div class="label-large grow">' + (state.isBatchSelectionMode ? '사진 선택 ' + count + '장' : '작업할 사진') + '</div>'));
+    if (state.isBatchSelectionMode) {
+      var all = h('<button class="btn btn-text">전체</button>');
+      all.addEventListener('click', actions.selectAllBatchPhotos);
+      var clear = h('<button class="btn btn-text">해제</button>');
+      clear.addEventListener('click', actions.clearBatchSelection);
+      var done = h('<button class="btn btn-tonal">완료</button>');
+      done.addEventListener('click', function () { actions.setBatchSelectionMode(false); });
+      head.appendChild(all); head.appendChild(clear); head.appendChild(done);
+    } else {
+      var pick = h('<button class="btn btn-outlined">선택</button>');
+      pick.addEventListener('click', function () { actions.setBatchSelectionMode(true); });
+      head.appendChild(pick);
+    }
+    (actionButtons || []).forEach(function (button) { head.appendChild(button); });
+    wrap.appendChild(head);
+
+    var strip = h('<div class="thumb-strip batch-photo-strip"></div>');
+    state.photos.forEach(function (p) {
+      var url = helpers.getObjectURL(p.uri) || '';
+      var isCurrent = selected && p.id === selected.id;
+      var isPicked = !!(state.selectedBatchPhotoIds || {})[p.id];
+      var thumb = h(
+        '<button class="palette-thumb batch-photo-thumb' +
+        (isCurrent ? ' selected current' : '') +
+        (isPicked ? ' picked' : '') +
+        '" aria-label="' + esc(p.displayName) + '">' +
+        '<img src="' + url + '" alt="">' +
+        '</button>'
+      );
+      var timer = null;
+      thumb.addEventListener('click', function () {
+        if (state.isBatchSelectionMode) actions.toggleBatchPhotoSelection(p.id);
+        else actions.selectPhoto(p.id);
+      });
+      thumb.addEventListener('pointerdown', function () {
+        timer = setTimeout(function () {
+          timer = null;
+          actions.setBatchPhotoSelected(p.id, true);
+        }, 500);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (eventName) {
+        thumb.addEventListener(eventName, function () {
+          if (timer) { clearTimeout(timer); timer = null; }
+        });
+      });
+      thumb.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      strip.appendChild(thumb);
+    });
+    wrap.appendChild(strip);
+    return wrap;
   }
 
   /* =====================================================================
@@ -188,10 +253,24 @@
     if (opts.label) wrap.appendChild(h('<label>' + opts.label + '</label>'));
     var trailing = h('<div class="trailing"></div>');
     var clearBtn = h('<button class="icon-btn small' + (input.value ? '' : ' hidden') + '" aria-label="입력 내용 지우기">' + ICONS.close + '</button>');
+    var debounceTimer = null;
+    function commitInput(value, immediate) {
+      if (!opts.onInput) return;
+      if (!opts.debounceMs || immediate) {
+        if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+        opts.onInput(value);
+        return;
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () {
+        debounceTimer = null;
+        opts.onInput(value);
+      }, opts.debounceMs);
+    }
     clearBtn.addEventListener('click', function () {
       input.value = '';
       clearBtn.classList.add('hidden');
-      if (opts.onInput) opts.onInput('');
+      commitInput('', true);
       input.focus();
     });
     trailing.appendChild(clearBtn);
@@ -211,16 +290,16 @@
         var v = input.value;
         // 같은 키 입력 태스크에서 다음 음절의 compositionstart가 이어질 수 있으므로
         // 미뤄서 커밋하고, 새 조합이 시작됐으면 건너뜀 (blur/change가 백스톱)
-        setTimeout(function () { if (!composing) opts.onInput(v); }, 0);
+        setTimeout(function () { if (!composing) commitInput(v); }, 0);
       }
     });
     input.addEventListener('input', function (e) {
       clearBtn.classList.toggle('hidden', !input.value);
       if (opts.imeSafe && (composing || e.isComposing)) return;
-      if (opts.onInput) opts.onInput(input.value);
+      commitInput(input.value);
     });
     input.addEventListener('change', function () {
-      if (opts.imeSafe && opts.onInput) opts.onInput(input.value);
+      if (opts.imeSafe && opts.onInput) commitInput(input.value, true);
     });
     return { wrap: wrap, input: input };
   }
@@ -252,17 +331,11 @@
         '<div class="body-small muted">' + (selIdx + 1) + ' / ' + state.photos.length + '</div>' +
         '</div></div>'));
     }
-    var strip = h('<div class="thumb-strip"></div>');
-    state.photos.forEach(function (p) {
-      var u = helpers.getObjectURL(p.uri);
-      var img = h('<img src="' + (u || '') + '" class="' + (sel && p.id === sel.id ? 'selected' : '') + '" alt="">');
-      img.addEventListener('click', function () { actions.selectPhoto(p.id); });
-      strip.appendChild(img);
-    });
-    s1.appendChild(strip);
-    var applyAll = h('<button class="btn btn-outlined full"' + (sel && state.photos.length >= 2 ? '' : ' disabled') + '>이 빌드 정보를 모든 사진에 적용</button>');
+    var applySelected = h('<button class="btn btn-tonal batch-action"' + (sel && selectedBatchCount(state) > 0 ? '' : ' disabled') + '>선택 적용</button>');
+    applySelected.addEventListener('click', actions.applyBuildInfoToBatch);
+    var applyAll = h('<button class="btn btn-outlined batch-action"' + (sel && state.photos.length >= 2 ? '' : ' disabled') + '>전체 적용</button>');
     applyAll.addEventListener('click', actions.applyBuildInfoToAll);
-    s1.appendChild(applyAll);
+    s1.appendChild(buildBatchPhotoStrip(state, actions, helpers, [applySelected, applyAll]));
     var resetInfo = h('<button class="btn btn-outlined full"' + (sel ? '' : ' disabled') + '>빌드 정보 초기화</button>');
     resetInfo.addEventListener('click', actions.clearSelectedBuildInfo);
     s1.appendChild(resetInfo);
@@ -338,6 +411,7 @@
     var nick = buildField({
       label: '닉네임', placeholder: '입력한 경우에만 표시합니다', value: info.nickname,
       dataKey: 'nickname', imeSafe: true,
+      debounceMs: 450,
       onInput: function (v) { setInfoField(actions, info, 'nickname', v); },
     });
     s6.appendChild(nick.wrap);
@@ -448,7 +522,8 @@
     return { housing: '', switchName: '', plate: '', mount: '', keycap: '', nickname: '', logoId: null, customLogoUri: null, logoDisabled: false };
   }
   function setInfo(actions, info, patch) {
-    actions.updateBuildInfo(Object.assign({}, info, patch));
+    var selected = window.KeyxifStore && window.KeyxifStore.selectedPhoto ? window.KeyxifStore.selectedPhoto() : null;
+    actions.updateBuildInfo(Object.assign({}, selected && selected.buildInfo ? selected.buildInfo : info, patch));
   }
   function setInfoField(actions, info, field, value) {
     var patch = {};
@@ -482,6 +557,7 @@
       value: current,
       dataKey: title === '보강판' ? 'plate' : 'mount',
       imeSafe: true,
+      debounceMs: 450,
       onInput: onInput,
     });
     sec.appendChild(field.wrap);
@@ -573,6 +649,7 @@
     var field = buildField({
       label: label, placeholder: placeholder, value: value,
       dataKey: 'bi-' + fieldKey, trailingBtn: '검색', imeSafe: true,
+      debounceMs: 450,
       onInput: function (v) {
         var sel = window.KeyxifStore.selectedPhoto();
         if (sel) setInfoField(actions, sel.buildInfo, FIELD_META[fieldKey].infoKey, v);
@@ -932,11 +1009,17 @@
      3.5 PaletteScreen
      ===================================================================== */
   function normalizeHexColor(value) {
+    if (typeof value === 'number' && isFinite(value)) {
+      var unsigned = value >>> 0;
+      return '#' + ((unsigned >> 16) & 255).toString(16).toUpperCase().padStart(2, '0') +
+        ((unsigned >> 8) & 255).toString(16).toUpperCase().padStart(2, '0') +
+        (unsigned & 255).toString(16).toUpperCase().padStart(2, '0');
+    }
     var match = String(value || '').trim().match(/^#?([0-9a-f]{6})$/i);
     return match ? '#' + match[1].toUpperCase() : null;
   }
 
-  function buildCustomColorControl(label, selectedColor, fallbackColor, onSelect) {
+  function buildCustomColorControl(label, selectedColor, fallbackColor, state, actions, onSelect) {
     var selected = normalizeHexColor(selectedColor);
     var value = selected || fallbackColor;
     var control = h(
@@ -959,6 +1042,7 @@
       }
       picker.value = normalized;
       textInput.value = normalized;
+      actions.rememberCustomColor(normalized);
       onSelect(normalized);
     }
 
@@ -977,13 +1061,45 @@
     inputs.appendChild(textInput);
     inputs.appendChild(apply);
     control.appendChild(inputs);
+    var recent = buildRecentCustomColorRail(state.recentCustomColors || [], selected, actions, function (color) {
+      picker.value = color;
+      textInput.value = color;
+      onSelect(color);
+    });
+    if (recent) control.appendChild(recent);
     return control;
+  }
+
+  function buildRecentCustomColorRail(colors, selectedColor, actions, onSelect) {
+    if (!colors || !colors.length) return null;
+    var rail = h('<div class="recent-custom-color-rail" aria-label="최근 사용자 지정 색상"></div>');
+    colors.slice(0, 24).forEach(function (color) {
+      var item = h('<div class="recent-custom-color-item"></div>');
+      var swatch = h('<button class="recent-custom-color-swatch' + (color === selectedColor ? ' selected' : '') + '" aria-label="' + color + ' 적용" style="background:' + color + '"></button>');
+      swatch.addEventListener('click', function () {
+        actions.rememberCustomColor(color);
+        onSelect(color);
+      });
+      var remove = h('<button class="recent-custom-color-delete" aria-label="' + color + ' 삭제">×</button>');
+      remove.addEventListener('click', function (event) {
+        event.stopPropagation();
+        actions.deleteRecentCustomColor(color);
+      });
+      item.appendChild(swatch);
+      item.appendChild(remove);
+      rail.appendChild(item);
+    });
+    return rail;
   }
 
   function renderPalette(container, state, actions, helpers) {
     var root = document.createElement('div');
     root.className = 'screen';
     var selected = window.KeyxifStore.selectedPhoto();
+    if (ui.colorPresetPhotoId !== (selected && selected.id)) {
+      ui.colorPresetPhotoId = selected && selected.id;
+      ui.colorPresetNameInput = '';
+    }
     var analysis = selected ? selected.analysisResult : null;
     var renderStyle = (selected && selected.renderStyle) || {
       usePaletteColorForCardBackground: false,
@@ -1002,14 +1118,15 @@
       '</div>'
     ));
 
-    var strip = h('<div class="thumb-strip"></div>');
-    state.photos.forEach(function (p) {
-      var url = helpers.getObjectURL(p.uri) || '';
-      var thumb = h('<button class="palette-thumb' + (p.id === (selected && selected.id) ? ' selected' : '') + '"><img src="' + url + '" alt=""></button>');
-      thumb.addEventListener('click', function () { actions.selectPhoto(p.id); });
-      strip.appendChild(thumb);
-    });
-    if (state.photos.length) root.appendChild(strip);
+    if (state.photos.length) {
+      var applySelectedColors = h('<button class="btn btn-tonal batch-action"' + (selected && selectedBatchCount(state) > 0 ? '' : ' disabled') + '>선택 적용</button>');
+      applySelectedColors.addEventListener('click', actions.applySelectedRenderStyleToBatch);
+      var applyAllColors = h('<button class="btn btn-outlined batch-action"' + (selected && state.photos.length >= 2 ? '' : ' disabled') + '>전체 적용</button>');
+      applyAllColors.addEventListener('click', actions.applySelectedRenderStyleToAll);
+      var autoApplyColors = h('<button class="btn btn-outlined batch-action"' + (state.photos.length ? '' : ' disabled') + '>자동 적용</button>');
+      autoApplyColors.addEventListener('click', actions.autoApplyReadablePaletteColorsToAll);
+      root.appendChild(buildBatchPhotoStrip(state, actions, helpers, [applySelectedColors, applyAllColors, autoApplyColors]));
+    }
 
     var modeCard = h('<section class="card col gap12" style="padding:16px"></section>');
     modeCard.appendChild(h('<div class="title-medium">대표 색상 분석 방식</div>'));
@@ -1094,6 +1211,41 @@
     if (!selected) {
       colorCard.appendChild(h('<div class="body-medium muted">먼저 사진을 추가해 주세요.</div>'));
     } else {
+      var presetBox = h('<div class="custom-color-presets col gap8"></div>');
+      var presetHead = h('<div class="row gap8" style="align-items:center"></div>');
+      presetHead.appendChild(h('<div class="label-large grow">색상 프리셋</div>'));
+      var presetName = h('<input class="input color-preset-name" type="text" placeholder="이름" value="' + helpers.esc(ui.colorPresetNameInput || '') + '">');
+      presetName.addEventListener('input', function (event) { ui.colorPresetNameInput = event.target.value; });
+      var savePreset = h('<button class="btn btn-filled batch-action">저장</button>');
+      savePreset.addEventListener('click', function () {
+        actions.saveColorPreset(ui.colorPresetNameInput);
+        ui.colorPresetNameInput = '';
+        notify();
+      });
+      presetHead.appendChild(presetName);
+      presetHead.appendChild(savePreset);
+      presetBox.appendChild(presetHead);
+      if (state.colorPresets && state.colorPresets.length) {
+        var presetRail = h('<div class="color-preset-rail"></div>');
+        state.colorPresets.slice(0, 12).forEach(function (preset) {
+          var bg = preset.renderStyle && preset.renderStyle.customCardBackgroundColor;
+          var fg = preset.renderStyle && preset.renderStyle.customTextColor;
+          var chip = h('<button class="chip color-preset-chip"><span class="color-dot" style="background:' + (bg || 'var(--surface-container-highest)') + '"></span><span class="color-dot" style="background:' + (fg || 'var(--on-surface)') + '"></span><span>' + helpers.esc(preset.presetName) + '</span></button>');
+          chip.addEventListener('click', function () { actions.applyColorPreset(preset); });
+          var remove = h('<button class="color-preset-delete" aria-label="색상 프리셋 삭제">?</button>');
+          remove.addEventListener('click', function (event) {
+            event.stopPropagation();
+            actions.deleteColorPreset(preset.id);
+          });
+          var item = h('<div class="color-preset-item"></div>');
+          item.appendChild(chip);
+          item.appendChild(remove);
+          presetRail.appendChild(item);
+        });
+        presetBox.appendChild(presetRail);
+      }
+      colorCard.appendChild(presetBox);
+
       colorCard.appendChild(h('<div class="label-large">카드 배경 색상</div>'));
       if (!colors.length) {
         colorCard.appendChild(h('<div class="body-medium muted">대표 색상을 분석 중이거나 추출된 색상이 없습니다. 사용자 지정 색상은 바로 사용할 수 있습니다.</div>'));
@@ -1115,7 +1267,7 @@
         });
         colorCard.appendChild(row);
       }
-      colorCard.appendChild(buildCustomColorControl('사용자 지정 카드 배경', renderStyle.customCardBackgroundColor, '#FFFFFF', function (color) {
+      colorCard.appendChild(buildCustomColorControl('사용자 지정 카드 배경', renderStyle.customCardBackgroundColor, '#FFFFFF', state, actions, function (color) {
         actions.updateSelectedPhotoRenderStyle(function (rs) {
           rs.customCardBackgroundColor = color;
           rs.usePaletteColorForCardBackground = true;
@@ -1151,7 +1303,7 @@
         });
         colorCard.appendChild(textRow);
       }
-      colorCard.appendChild(buildCustomColorControl('사용자 지정 텍스트 색상', renderStyle.customTextColor, '#111111', function (color) {
+      colorCard.appendChild(buildCustomColorControl('사용자 지정 텍스트 색상', renderStyle.customTextColor, '#111111', state, actions, function (color) {
         actions.updateSelectedPhotoRenderStyle(function (rs) {
           rs.customTextColor = color;
           rs.usePaletteColorForText = true;
@@ -1352,14 +1504,14 @@
     var consts = window.KeyxifStore.consts;
     var names = consts.TEMPLATE_FONT_NAME || { System: '시스템 기본' };
     var selected = state.settings.templateFont || 'System';
-    var row = h('<div class="card soft-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px"></div>');
+    var row = h('<div class="export-setting-row"></div>');
     row.appendChild(h(
       '<div class="col gap2">' +
       '<div class="label-large muted">템플릿 폰트</div>' +
       '<div class="title-small">' + esc(names[selected] || selected) + '</div>' +
       '</div>'
     ));
-    var select = h('<select class="input" style="width:auto;min-width:168px"></select>');
+    var select = h('<select class="input export-control-input"></select>');
     Object.keys(names).forEach(function (key) {
       var opt = document.createElement('option');
       opt.value = key;
@@ -1394,7 +1546,22 @@
       '<div class="body-medium muted">WEBP 품질 ' + s.webpQuality + '% · Pictures/' + esc(s.saveDirectoryName) + '</div>' +
       '</div>'));
 
-    root.appendChild(buildTemplateFontControl(state, actions, helpers));
+    var exportSettingsCard = h('<div class="card export-settings-card"></div>');
+    exportSettingsCard.appendChild(buildTemplateFontControl(state, actions, helpers));
+
+    var startNumberCard = h('<div class="export-setting-row"></div>');
+    startNumberCard.appendChild(h(
+      '<div class="col gap2 grow">' +
+      '<div class="label-large muted">파일명 시작 번호</div>' +
+      '<div class="body-small muted">저장 시 첫 사진에 붙일 번호를 지정합니다.</div>' +
+      '</div>'
+    ));
+    var startNumberInput = h('<input class="input export-number-input" type="number" min="1" step="1" value="' + (state.exportStartIndex || 1) + '">');
+    startNumberInput.disabled = prog.isSaving;
+    startNumberInput.addEventListener('change', function () { actions.setExportStartIndex(startNumberInput.value); });
+    startNumberCard.appendChild(startNumberInput);
+    exportSettingsCard.appendChild(startNumberCard);
+    root.appendChild(exportSettingsCard);
 
     if (prog.message) root.appendChild(h('<div class="body-medium muted">' + esc(prog.message) + '</div>'));
     if (prog.total > 0) {

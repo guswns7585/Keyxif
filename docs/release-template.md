@@ -1,10 +1,11 @@
 ## Keyxif Release
 
 ### Changes
-- Hide the unfinished custom-template editor UI while keeping its implementation code for later work.
-- Add the latest keyboard vendor, studio, housing, logo, and font preset updates to Android and Web.
-- Keep the restored app icon separate from the Keyxif logo assets used inside templates.
-- Synchronize Android and Web version metadata for 1.1.0.
+- Add batch color application and color presets for multi-photo workflows.
+- Add recent custom color palettes on Android and Web, including Android dropdown behavior from 6 saved colors.
+- Tune automatic palette color selection so text prefers detected colors and frame backgrounds are less aggressive.
+- Improve custom logo fallback so missing user logo assets render with the Keyxif logo instead of housing auto-match.
+- Synchronize Android and Web version metadata for 1.1.1.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

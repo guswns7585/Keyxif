@@ -95,6 +95,7 @@
   --surface-container-highest: #E7E4DC;
   --outline: #CFCBC0;
   --outline-variant: #E4E1D8;
+  --selection-accent: #FFD400;
   --error: #A83A32;
   --on-error: #FFFFFF;
   --error-container: #F7E0DD;
@@ -131,6 +132,7 @@
   --surface-container-highest: #363229;
   --outline: #8B8377;
   --outline-variant: #514C44;
+  --selection-accent: #FFD84D;
   --error: #FFB4AB;
   --on-error: #690005;
   --error-container: #93000A;
@@ -493,12 +495,49 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border: none;
 .empty-icon svg { width: 38px; height: 38px; fill: var(--on-surface-variant); }
 
 /* ---- BuildInfo thumbnails strip ---- */
-.thumb-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px; }
+.thumb-strip { display: flex; gap: 8px; overflow-x: auto; overflow-y: visible; padding: 6px; }
 .thumb-strip img {
   width: 72px; height: 72px; object-fit: cover; border-radius: 6px; flex: none;
   border: 2px solid transparent; cursor: pointer;
 }
 .thumb-strip img.selected { border-color: var(--primary); }
+.batch-photo-panel { display: flex; flex-direction: column; gap: 8px; }
+.batch-photo-head { align-items: center; flex-wrap: wrap; }
+.batch-photo-strip { padding: 3px; }
+.batch-action {
+  height: 34px;
+  min-width: auto;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.batch-photo-thumb {
+  position: relative;
+  box-shadow: inset 0 0 0 1px transparent;
+  transform-origin: center center;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease, opacity 120ms ease;
+}
+.batch-photo-thumb.current { border-color: var(--outline); }
+.batch-photo-panel.selecting .batch-photo-thumb:not(.picked) {
+  opacity: 0.62;
+}
+.batch-photo-thumb.picked {
+  border-color: var(--selection-accent);
+  opacity: 1;
+  transform: scale(1.055);
+  box-shadow:
+    0 0 0 2px var(--selection-accent),
+    0 0 0 4px color-mix(in srgb, var(--selection-accent) 24%, transparent),
+    0 8px 18px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px var(--surface);
+}
+.batch-photo-thumb.picked::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--selection-accent) 92%, white 8%);
+  pointer-events: none;
+}
 
 /* ---- Template preview card ---- */
 .tpl-card {
@@ -672,6 +711,31 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border: none;
 .editor-tab-icon.card { border-radius: 3px; box-shadow: inset 0 0 0 3px currentColor; background: transparent; }
 
 /* ---- Export cards ---- */
+.export-settings-card {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.export-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 2px;
+}
+.export-setting-row + .export-setting-row {
+  border-top: 1px solid var(--outline-variant);
+}
+.export-control-input {
+  width: min(46vw, 220px);
+  min-width: 168px;
+}
+.export-number-input {
+  width: 104px;
+  text-align: center;
+}
 .export-card { padding: 10px; display: flex; flex-direction: column; gap: 8px; border-radius: 16px; }
 .render-preview {
   position: relative; width: 100%; aspect-ratio: 1; border-radius: 12px;
@@ -748,14 +812,103 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border: none;
 .custom-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
 .custom-color-picker::-webkit-color-swatch { border: 0; border-radius: 3px; }
 .custom-color-picker::-moz-color-swatch { border: 0; border-radius: 3px; }
-.custom-color-hex { min-width: 0; text-transform: uppercase; }
+.custom-color-hex {
+  min-width: 0;
+  text-transform: uppercase;
+  background: var(--surface);
+  color: var(--on-surface);
+  border: 1px solid var(--outline);
+}
 .custom-color-apply { min-width: 64px; }
+.recent-custom-color-rail {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 1px 2px 4px;
+  scrollbar-width: thin;
+}
+.recent-custom-color-item {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.recent-custom-color-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--outline);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+.recent-custom-color-swatch.selected {
+  border: 2px solid var(--primary);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+.recent-custom-color-delete {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: var(--on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+.recent-custom-color-delete:hover { background: var(--surface-container-high); }
+.input {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--outline);
+  background: var(--surface);
+  color: var(--on-surface);
+  outline: none;
+  font: inherit;
+}
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.color-preset-name { width: min(34vw, 132px); min-width: 82px; }
+.color-preset-rail {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+}
+.color-preset-item { position: relative; flex: 0 0 auto; }
+.color-preset-chip { padding-right: 30px; max-width: 190px; }
+.color-preset-delete {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: var(--on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.color-preset-delete:hover { background: var(--surface-container-high); }
 
 @media (max-width: 420px) {
   .stepbar { gap: 3px; padding: 5px; }
   .step-chip { gap: 3px; padding: 8px 2px; font-size: 11px; }
   .step-badge { width: 18px; height: 18px; font-size: 10px; }
   .step-badge svg { width: 11px; height: 11px; }
+  .export-setting-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .export-control-input,
+  .export-number-input {
+    width: 100%;
+  }
 }
 
 @media (pointer: coarse), (max-width: 700px) {

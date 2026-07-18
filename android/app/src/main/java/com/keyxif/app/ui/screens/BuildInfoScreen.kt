@@ -4,12 +4,15 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +54,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,7 +76,7 @@ import com.keyxif.app.ui.components.ClearableTextField
 import com.keyxif.app.ui.components.PresetSearchField
 import com.keyxif.app.ui.components.RecentChips
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BuildInfoScreen(
     state: KeyxifUiState,
@@ -88,6 +94,12 @@ fun BuildInfoScreen(
     onKeycapPreset: (KeycapPreset) -> Unit,
     onClearBuildInfo: () -> Unit,
     onApplyToAll: () -> Unit,
+    onApplyToSelected: () -> Unit,
+    onSetBatchSelectionMode: (Boolean) -> Unit,
+    onToggleBatchPhotoSelection: (String) -> Unit,
+    onSetBatchPhotoSelected: (String, Boolean) -> Unit,
+    onSelectAllBatchPhotos: () -> Unit,
+    onClearBatchSelection: () -> Unit,
     onPresetQueryChange: (String) -> Unit,
     onSavePreset: (String) -> Unit,
     onApplyPreset: (BuildPreset) -> Unit,
@@ -196,22 +208,36 @@ fun BuildInfoScreen(
                         }
                     }
                 }
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(
+                    contentPadding = PaddingValues(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     items(state.photos, key = { it.id }) { photo ->
                         val selected = photo.id == selectedPhoto?.id
+                        val picked = photo.id in state.selectedBatchPhotoIds
                         Surface(
                             modifier = Modifier
                                 .width(72.dp)
                                 .aspectRatio(1f)
-                                .then(
-                                    if (selected) {
-                                        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
-                                    } else {
-                                        Modifier
+                                .graphicsLayer {
+                                    val scale = if (picked) 1.055f else 1f
+                                    scaleX = scale
+                                    scaleY = scale
+                                    transformOrigin = TransformOrigin.Center
+                                }
+                                .combinedClickable(
+                                    onClick = {
+                                        if (state.isBatchSelectionMode) onToggleBatchPhotoSelection(photo.id) else onSelectPhoto(photo.id)
                                     },
+                                    onLongClick = { onSetBatchPhotoSelected(photo.id, true) },
                                 ),
                             shape = RoundedCornerShape(6.dp),
-                            onClick = { onSelectPhoto(photo.id) },
+                            border = when {
+                                picked -> BorderStroke(3.dp, Color(0xFFFFD400))
+                                selected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                                else -> null
+                            },
+                            shadowElevation = if (picked) 4.dp else 0.dp,
                         ) {
                             AsyncImage(
                                 model = photo.uri,
@@ -221,11 +247,26 @@ fun BuildInfoScreen(
                         }
                     }
                 }
-                OutlinedButton(
-                    enabled = selectedPhoto != null && state.photos.size > 1,
-                    onClick = onApplyToAll,
-                ) {
-                    Text("이 빌드 정보를 모든 사진에 적용")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (state.isBatchSelectionMode) {
+                        TextButton(onClick = onSelectAllBatchPhotos) { Text("전체") }
+                        TextButton(onClick = onClearBatchSelection) { Text("해제") }
+                        TextButton(onClick = { onSetBatchSelectionMode(false) }) { Text("완료") }
+                    } else {
+                        OutlinedButton(onClick = { onSetBatchSelectionMode(true) }) { Text("선택") }
+                    }
+                    Button(
+                        enabled = selectedPhoto != null && state.selectedBatchPhotoIds.isNotEmpty(),
+                        onClick = onApplyToSelected,
+                    ) {
+                        Text("선택 적용")
+                    }
+                    OutlinedButton(
+                        enabled = selectedPhoto != null && state.photos.size > 1,
+                        onClick = onApplyToAll,
+                    ) {
+                        Text("전체 적용")
+                    }
                 }
                 OutlinedButton(
                     enabled = selectedPhoto != null,

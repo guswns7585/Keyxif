@@ -78,7 +78,7 @@
 
   var SAVE_LONG_SIDE_LIMIT = 4096;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.1.0-web';
+  var VERSION = '1.1.1-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */
@@ -110,6 +110,65 @@
   function normalizeCustomColor(value) {
     var match = String(value == null ? '' : value).trim().match(/^#?([0-9a-f]{6})$/i);
     return match ? '#' + match[1].toUpperCase() : null;
+  }
+  function colorToRgbParts(color) {
+    if (typeof color === 'string') {
+      var hex = normalizeCustomColor(color);
+      if (hex) {
+        return {
+          r: parseInt(hex.slice(1, 3), 16),
+          g: parseInt(hex.slice(3, 5), 16),
+          b: parseInt(hex.slice(5, 7), 16),
+        };
+      }
+    }
+    var value = Number(color);
+    if (!isFinite(value)) return { r: 0, g: 0, b: 0 };
+    var unsigned = value >>> 0;
+    return { r: (unsigned >> 16) & 255, g: (unsigned >> 8) & 255, b: unsigned & 255 };
+  }
+  function relativeLuminance(color) {
+    function channel(v) {
+      var n = v / 255;
+      return n <= 0.03928 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
+    }
+    var c = colorToRgbParts(color);
+    return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+  }
+  function contrastRatio(first, second) {
+    var l1 = relativeLuminance(first);
+    var l2 = relativeLuminance(second);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  }
+  function colorSaturation(color) {
+    var c = colorToRgbParts(color);
+    var r = c.r / 255, g = c.g / 255, b = c.b / 255;
+    var max = Math.max(r, g, b);
+    var min = Math.min(r, g, b);
+    return max === 0 ? 0 : (max - min) / max;
+  }
+  function paletteBackgroundScore(color, index, count) {
+    var lum = relativeLuminance(color);
+    var rep = 1 - (index / Math.max(1, count - 1)) * 0.35;
+    var midTone = Math.max(0, Math.min(1, 1 - Math.abs(lum - 0.5) * 2));
+    var bestContrast = Math.max(contrastRatio(color, -16777216), contrastRatio(color, -1));
+    var saturation = colorSaturation(color);
+    var extremePenalty = lum < 0.08 || lum > 0.92 ? 0.42 : 0;
+    var neutralPenalty = saturation < 0.08 ? 0.08 : 0;
+    return rep * 0.38 + midTone * 0.32 + saturation * 0.18 +
+      Math.max(0, Math.min(1, bestContrast / 21)) * 0.12 - neutralPenalty - extremePenalty;
+  }
+  function paletteTextScore(background, text, index, count) {
+    var rep = 1 - (index / Math.max(1, count - 1)) * 0.2;
+    var rawContrast = contrastRatio(background, text);
+    var contrast = Math.max(0, Math.min(1, rawContrast / 21));
+    var lum = relativeLuminance(text);
+    var saturation = colorSaturation(text);
+    var notTooExtreme = Math.max(0, Math.min(1, 1 - Math.abs(lum - 0.5) * 1.05));
+    var lowContrastPenalty = Math.max(0, 2.35 - rawContrast) / 2.35 * 0.34;
+    var neutralPenalty = saturation < 0.08 && (lum < 0.16 || lum > 0.84) ? 0.48 : 0;
+    return contrast * 0.30 + saturation * 0.46 + rep * 0.12 + notTooExtreme * 0.12 -
+      lowContrastPenalty - neutralPenalty;
   }
 
   function templateFontFamily(font) {
@@ -655,6 +714,8 @@
     currentStep: 'Photos',
     photos: [],
     selectedPhotoId: null,
+    isBatchSelectionMode: false,
+    selectedBatchPhotoIds: {},
     selectedExportPhotoIds: {},        // Set 대용: { id: true }
     expandedExportPhotoId: null,
     selectedTemplate: 'ClassicFrame',
@@ -667,10 +728,13 @@
     isGalleryOpen: false,
     exportedImages: [],
     buildPresets: [],
+    colorPresets: [],
+    recentCustomColors: [],
     presetQuery: '',
     recentHousing: [], recentSwitches: [], recentKeycaps: [], recentNicknames: [],
     shareMessage: null,
     uiMessage: null,
+    exportStartIndex: 1,
     exportProgress: defaultExportProgress(),
     showDraftRestorePrompt: false,
     draftLastUpdatedAt: null,
@@ -870,7 +934,71 @@
     var arr = window.KeyxifDB.loadJSON('keyxif.buildPresets');
     state.buildPresets = Array.isArray(arr) ? arr.slice().sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); }) : [];
   }
+  function resolvedPaletteRenderStyle(style, paletteColors) {
+    var source = Object.assign(defaultRenderStyle(), style || {});
+    var palette = Array.isArray(paletteColors) ? paletteColors : [];
+    var bg = source.customCardBackgroundColor;
+    if (!bg && source.usePaletteColorForCardBackground) {
+      bg = palette[clamp(Math.round(Number(source.paletteBackgroundColorIndex) || 0), 0, 4)] || null;
+    }
+    var fg = source.customTextColor;
+    if (!fg && source.usePaletteColorForText) {
+      fg = palette[clamp(Math.round(Number(source.paletteTextColorIndex) || 0), 0, 4)] || null;
+    }
+    return Object.assign(defaultRenderStyle(), source, {
+      customCardBackgroundColor: normalizeCustomColor(bg) || bg || null,
+      customTextColor: normalizeCustomColor(fg) || fg || null,
+    });
+  }
+  function autoReadableRenderStyle(paletteColors) {
+    var palette = (Array.isArray(paletteColors) ? paletteColors : []).filter(function (color) { return color != null && color !== 0; });
+    if (!palette.length) return null;
+    var bg = palette.slice().sort(function (a, b) {
+      return paletteBackgroundScore(b, palette.indexOf(b), palette.length) -
+        paletteBackgroundScore(a, palette.indexOf(a), palette.length);
+    })[0];
+    var textCandidate = palette
+      .filter(function (color) { return color !== bg; })
+      .sort(function (a, b) {
+        return paletteTextScore(bg, b, palette.indexOf(b), palette.length) -
+          paletteTextScore(bg, a, palette.indexOf(a), palette.length);
+      })[0];
+    var text = textCandidate || (contrastRatio(bg, -16777216) >= contrastRatio(bg, -1) ? -16777216 : -1);
+    return Object.assign(defaultRenderStyle(), {
+      usePaletteColorForCardBackground: true,
+      customCardBackgroundColor: bg,
+      usePaletteColorForText: true,
+      customTextColor: text,
+    });
+  }
   function saveBuildPresets() { window.KeyxifDB.saveJSON('keyxif.buildPresets', state.buildPresets); }
+
+  function normalizeColorPreset(raw) {
+    raw = raw || {};
+    return {
+      id: String(raw.id || uuid()),
+      presetName: String(raw.presetName || '').trim() || '색상 프리셋',
+      renderStyle: Object.assign(defaultRenderStyle(), raw.renderStyle || {}),
+      createdAt: Number(raw.createdAt) || Date.now(),
+    };
+  }
+  function loadColorPresets() {
+    var arr = window.KeyxifDB.loadJSON('keyxif.colorPresets');
+    state.colorPresets = Array.isArray(arr)
+      ? arr.map(normalizeColorPreset).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); })
+      : [];
+  }
+  function saveColorPresets() { window.KeyxifDB.saveJSON('keyxif.colorPresets', state.colorPresets); }
+
+  function loadRecentCustomColors() {
+    var arr = window.KeyxifDB.loadJSON('keyxif.recentCustomColors');
+    state.recentCustomColors = Array.isArray(arr)
+      ? arr.map(normalizeCustomColor).filter(Boolean).filter(function (color, index, self) { return self.indexOf(color) === index; }).slice(0, 24)
+      : [];
+  }
+  function saveRecentCustomColors() {
+    window.KeyxifDB.saveJSON('keyxif.recentCustomColors', state.recentCustomColors.slice(0, 24));
+  }
 
   function normalizeCustomTemplate(template) {
     var fallback = createBlankCustomTemplate();
@@ -1214,6 +1342,10 @@
       if (customImg) {
         return { customLogoImage: customImg, logoLabel: label, logoVariants: null, logoColorPolicy: 'MANUAL_LIGHT_DARK', paletteColors: paletteColors };
       }
+      if (buildInfo.customLogoUri) {
+        preset = S.logoById('keyxif') || preset;
+        label = (preset && preset.name) || S.logoName('keyxif') || label;
+      }
       if (!preset) return { logoImage: null, logoLabel: label, logoVariants: null, logoColorPolicy: 'MANUAL_LIGHT_DARK', paletteColors: paletteColors };
       return Promise.all([
         logoImage(preset.drawable), logoImage(preset.blackDrawable), logoImage(preset.whiteDrawable),
@@ -1441,11 +1573,12 @@
             if (token !== exportJobToken) return; // REPLACE: 대체됨
             if (!s.skipFailedOnBatchSave && failure > 0) return; // 첫 실패에서 중단
             var photo = item.photo;
-            var index = i + 1;
+            var progressIndex = i + 1;
+            var fileIndex = Math.max(1, Math.round(Number(state.exportStartIndex) || 1)) + i;
             state.exportProgress = {
-              isSaving: true, current: index, total: total,
+              isSaving: true, current: progressIndex, total: total,
               successCount: success, failureCount: failure,
-              message: index + ' / ' + total + ' 처리 중',
+              message: progressIndex + ' / ' + total + ' 처리 중',
             };
             photo.renderStatus = 'Rendering';
             emit();
@@ -1454,11 +1587,11 @@
                 if (token !== exportJobToken) return; // 부수효과(다운로드/기록) 직전 재확인
                 var blob = encoded.blob;
                 var ext = encoded.ext;
-                var fileName = outputFileName(item.snap.buildInfo, index, s, ext);
+                var fileName = outputFileName(item.snap.buildInfo, fileIndex, s, ext);
                 downloadBlob(blob, fileName);
                 var m = U().meaningfulBuildTextOrNull;
                 var record = {
-                  id: Date.now() + '-' + photo.id + '-' + index,
+                  id: Date.now() + '-' + photo.id + '-' + fileIndex,
                   uri: '', fileName: fileName, createdAt: Date.now(),
                   width: canvas.width, height: canvas.height,
                   fileSizeBytes: blob.size, templateName: customTemplate ? customTemplate.name : template,
@@ -1677,6 +1810,8 @@
       revokeObjectURL(photo.uri);
       state.photos = state.photos.filter(function (p) { return p.id !== id; });
       delete state.selectedExportPhotoIds[id];
+      delete state.selectedBatchPhotoIds[id];
+      if (Object.keys(state.selectedBatchPhotoIds).length === 0) state.isBatchSelectionMode = false;
       if (state.expandedExportPhotoId === id) state.expandedExportPhotoId = null;
       if (state.selectedPhotoId === id) state.selectedPhotoId = state.photos[0] ? state.photos[0].id : null;
       emit();
@@ -1689,6 +1824,8 @@
       state.photos = [];
       state.selectedPhotoId = null;
       state.selectedExportPhotoIds = {};
+      state.selectedBatchPhotoIds = {};
+      state.isBatchSelectionMode = false;
       state.expandedExportPhotoId = null;
       state.currentStep = 'Photos';
       exportJobToken++; // 진행 중이던 내보내기 체인 취소 (progress 부활 방지)
@@ -1708,6 +1845,7 @@
     startNewSession: function () {
       window.KeyxifDB.removeKey('keyxif.draft');
       state.currentStep = 'Photos'; state.photos = []; state.selectedPhotoId = null;
+      state.selectedBatchPhotoIds = {}; state.isBatchSelectionMode = false;
       exportJobToken++; // 진행 중이던 내보내기 체인 취소
       state.exportProgress = defaultExportProgress();
       state.showDraftRestorePrompt = false; state.draftLastUpdatedAt = null;
@@ -1728,6 +1866,37 @@
       emit();
     },
 
+    // ---- Shared photo selection for BuildInfo / Palette
+    setBatchSelectionMode: function (enabled) {
+      state.isBatchSelectionMode = !!enabled;
+      if (!enabled) state.selectedBatchPhotoIds = {};
+      emit();
+    },
+    setBatchPhotoSelected: function (id, selected) {
+      if (!findPhoto(id)) return;
+      state.isBatchSelectionMode = true;
+      if (selected) state.selectedBatchPhotoIds[id] = true;
+      else delete state.selectedBatchPhotoIds[id];
+      emit();
+    },
+    toggleBatchPhotoSelection: function (id) {
+      if (!findPhoto(id)) return;
+      state.isBatchSelectionMode = true;
+      if (state.selectedBatchPhotoIds[id]) delete state.selectedBatchPhotoIds[id];
+      else state.selectedBatchPhotoIds[id] = true;
+      emit();
+    },
+    selectAllBatchPhotos: function () {
+      state.isBatchSelectionMode = true;
+      state.selectedBatchPhotoIds = {};
+      state.photos.forEach(function (p) { state.selectedBatchPhotoIds[p.id] = true; });
+      emit();
+    },
+    clearBatchSelection: function () {
+      state.selectedBatchPhotoIds = {};
+      emit();
+    },
+
     // ---- Build info
     updateBuildInfo: function (buildInfo) {
       var p = selectedPhoto();
@@ -1743,6 +1912,53 @@
       p.renderStyle.paletteTextColorIndex = clamp(Math.round(Number(p.renderStyle.paletteTextColorIndex) || 0), 0, 4);
       p.renderStyle.customCardBackgroundColor = normalizeCustomColor(p.renderStyle.customCardBackgroundColor);
       p.renderStyle.customTextColor = normalizeCustomColor(p.renderStyle.customTextColor);
+      emit();
+    },
+    rememberCustomColor: function (color) {
+      var normalized = normalizeCustomColor(color);
+      if (!normalized) return;
+      state.recentCustomColors = [normalized].concat((state.recentCustomColors || []).filter(function (item) { return item !== normalized; })).slice(0, 24);
+      saveRecentCustomColors();
+      emit();
+    },
+    deleteRecentCustomColor: function (color) {
+      var normalized = normalizeCustomColor(color);
+      state.recentCustomColors = (state.recentCustomColors || []).filter(function (item) { return item !== normalized; });
+      saveRecentCustomColors();
+      emit();
+    },
+    applySelectedRenderStyleToBatch: function () {
+      var p = selectedPhoto();
+      var ids = Object.keys(state.selectedBatchPhotoIds || {});
+      if (!p || ids.length === 0) { message('색상을 적용할 사진을 선택해 주세요.'); return; }
+      var style = resolvedPaletteRenderStyle(p.renderStyle, p.analysisResult && p.analysisResult.paletteColors);
+      ids.forEach(function (id) {
+        var target = findPhoto(id);
+        if (target) target.renderStyle = Object.assign(defaultRenderStyle(), style);
+      });
+      message('선택한 사진 ' + ids.length + '장에 색상 설정을 적용했습니다.');
+      emit();
+    },
+    applySelectedRenderStyleToAll: function () {
+      var p = selectedPhoto();
+      if (!p) return;
+      var style = resolvedPaletteRenderStyle(p.renderStyle, p.analysisResult && p.analysisResult.paletteColors);
+      state.photos.forEach(function (target) {
+        target.renderStyle = Object.assign(defaultRenderStyle(), style);
+      });
+      message('모든 사진에 색상 설정을 적용했습니다.');
+      emit();
+    },
+    autoApplyReadablePaletteColorsToAll: function () {
+      var count = 0;
+      state.photos.forEach(function (target) {
+        var style = autoReadableRenderStyle(target.analysisResult && target.analysisResult.paletteColors);
+        if (style) {
+          target.renderStyle = style;
+          count += 1;
+        }
+      });
+      message(count > 0 ? ('사진 ' + count + '장에 자동 색상 설정을 적용했습니다.') : '자동 적용할 검출 색상이 없습니다.');
       emit();
     },
     updateSelectedPhotoAnalysisMode: function (mode) {
@@ -1803,6 +2019,18 @@
       if (!p) return;
       state.photos.forEach(function (o) { o.buildInfo = Object.assign({}, p.buildInfo); });
       recordBuildInfoRecents(p.buildInfo);
+      emit();
+    },
+    applyBuildInfoToBatch: function () {
+      var p = selectedPhoto();
+      var ids = Object.keys(state.selectedBatchPhotoIds || {});
+      if (!p || ids.length === 0) { message('정보를 적용할 사진을 선택해 주세요.'); return; }
+      ids.forEach(function (id) {
+        var target = findPhoto(id);
+        if (target) target.buildInfo = Object.assign({}, p.buildInfo);
+      });
+      recordBuildInfoRecents(p.buildInfo);
+      message('선택한 사진 ' + ids.length + '장에 빌드 정보를 적용했습니다.');
       emit();
     },
     selectHousingPreset: function (preset) {
@@ -2440,6 +2668,33 @@
       saveBuildPresets();
       emit();
     },
+    saveColorPreset: function (name) {
+      var p = selectedPhoto();
+      if (!p) return;
+      var trimmed = String(name || '').trim() || ('색상 프리셋 ' + (state.colorPresets.length + 1));
+      state.colorPresets.unshift(normalizeColorPreset({
+        id: uuid(),
+        presetName: trimmed,
+        renderStyle: resolvedPaletteRenderStyle(p.renderStyle, p.analysisResult && p.analysisResult.paletteColors),
+        createdAt: Date.now(),
+      }));
+      state.colorPresets = state.colorPresets.slice(0, 50);
+      saveColorPresets();
+      message('색상 프리셋을 저장했습니다.');
+      emit();
+    },
+    applyColorPreset: function (preset) {
+      var p = selectedPhoto();
+      if (!p || !preset) return;
+      p.renderStyle = Object.assign(defaultRenderStyle(), preset.renderStyle || {});
+      message('색상 프리셋을 적용했습니다.');
+      emit();
+    },
+    deleteColorPreset: function (id) {
+      state.colorPresets = state.colorPresets.filter(function (preset) { return preset.id !== id; });
+      saveColorPresets();
+      emit();
+    },
 
     // ---- Recents
     removeRecentHousing: function (v) { removeRecentFrom('recentHousing', v); },
@@ -2460,6 +2715,10 @@
     savePhoto: function (id) { enqueueExport([id]); },
     savePhotos: function (ids) { enqueueExport(ids); },
     saveAll: function () { enqueueExport(state.photos.map(function (p) { return p.id; })); },
+    setExportStartIndex: function (value) {
+      state.exportStartIndex = Math.max(1, Math.round(Number(value) || 1));
+      emit();
+    },
 
     // ---- Exported records
     shareExportedImage: function (image) {
@@ -2610,6 +2869,8 @@
       applyTheme();
       loadRecents();
       loadBuildPresets();
+      loadColorPresets();
+      loadRecentCustomColors();
       loadCustomTemplates();
       return refreshExported();
     }).then(function () {
