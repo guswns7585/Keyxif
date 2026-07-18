@@ -2,6 +2,7 @@ package com.keyxif.app.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -48,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -62,6 +64,7 @@ import com.keyxif.app.domain.model.KeyboardBuildInfo
 import com.keyxif.app.domain.model.UpdateDownloadState
 import com.keyxif.app.domain.model.UpdateInfo
 import com.keyxif.app.ui.screens.BuildInfoScreen
+import com.keyxif.app.ui.screens.CustomTemplateEditorScreen
 import com.keyxif.app.ui.screens.ExportScreen
 import com.keyxif.app.ui.screens.ExportedGalleryScreen
 import com.keyxif.app.ui.screens.PaletteScreen
@@ -72,12 +75,25 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private const val CUSTOM_TEMPLATE_UI_ENABLED = false
+
 @Composable
 fun KeyxifApp(viewModel: KeyxifViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val customTemplateEditorVisible = CUSTOM_TEMPLATE_UI_ENABLED && state.customTemplateEditorState != null
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     var pendingExportRequest by remember { mutableStateOf<ExportRequest?>(null) }
+    var pendingBackupRestoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    val backupCreateLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip"),
+        onResult = { uri -> uri?.let(viewModel::createBackup) },
+    )
+    val backupRestoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri -> pendingBackupRestoreUri = uri },
+    )
 
     fun runExport(request: ExportRequest) {
         when (request) {
@@ -201,7 +217,11 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
             )
         },
         bottomBar = {
-            if (!state.isSettingsOpen && !state.isGalleryOpen) {
+            if (!state.isSettingsOpen &&
+                !state.isGalleryOpen &&
+                !customTemplateEditorVisible &&
+                !(state.currentStep == AppStep.Photos && state.photos.isEmpty())
+            ) {
                 StepBottomActions(
                     state = state,
                     onPrevious = viewModel::navigateToPreviousStep,
@@ -244,6 +264,13 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                     onInstallDownloadedUpdate = viewModel::installDownloadedUpdate,
                     onPruneMissingExportedImages = viewModel::pruneMissingExportedImages,
                     onClearExportedImageRecords = viewModel::clearExportedImageRecords,
+                    onCreateBackup = {
+                        val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                        backupCreateLauncher.launch("Keyxif_backup_$stamp.zip")
+                    },
+                    onChooseBackupToRestore = {
+                        backupRestoreLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                    },
                     onOpenContactEmail = viewModel::openSupportEmail,
                 )
             } else if (state.isGalleryOpen) {
@@ -292,12 +319,72 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                         onDeleteRecentNickname = viewModel::removeRecentNickname,
                     )
 
-                    AppStep.Template -> TemplateSelectScreen(
-                        selectedTemplate = state.selectedTemplate,
-                        buildInfo = state.selectedPhoto?.buildInfo ?: KeyboardBuildInfo(),
-                        selectedPhotoLabel = state.selectedPhoto?.displayName,
-                        onSelect = viewModel::selectTemplate,
-                    )
+                    AppStep.Template -> {
+                        val editorState = state.customTemplateEditorState
+                        if (CUSTOM_TEMPLATE_UI_ENABLED && editorState != null) {
+                            val buildInfo = state.selectedPhoto?.buildInfo ?: KeyboardBuildInfo()
+                            val logoPreset = viewModel.logos.firstOrNull { it.id == buildInfo.logoId }
+                            val logoModel: Any? = when {
+                                buildInfo.logoDisabled -> null
+                                buildInfo.customLogoUri != null -> buildInfo.customLogoUri
+                                logoPreset != null -> logoPreset.blackDrawableResId
+                                    ?: logoPreset.drawableResId
+                                    ?: logoPreset.whiteDrawableResId
+                                else -> null
+                            }
+                            CustomTemplateEditorScreen(
+                                editorState = editorState,
+                                selectedPhotoUri = state.selectedPhoto?.uri,
+                                paletteColors = state.selectedPhoto?.analysisResult?.paletteColors ?: emptyList(),
+                                buildInfo = buildInfo,
+                                logoModel = logoModel,
+                                onSelectTab = viewModel::selectCustomTemplateEditorTab,
+                                onSelectTarget = viewModel::selectCustomTemplateTarget,
+                                onSelectElement = viewModel::selectCustomTemplateElement,
+                                onSelectCard = viewModel::selectCustomTemplateCard,
+                                onAddTextElement = viewModel::addCustomTemplateTextElement,
+                                onAddLogoElement = viewModel::addCustomTemplateLogoElement,
+                                onAddColorChipElement = viewModel::addCustomTemplateColorChipElement,
+                                onAddCard = viewModel::addCustomTemplateInternalCard,
+                                onUpdateCardBounds = viewModel::updateCustomTemplateCardBounds,
+                                onApplyCardStyle = viewModel::applySelectedCustomTemplateCardStyle,
+                                onUpdateSelectedCardStyle = viewModel::updateSelectedCustomTemplateCardStyle,
+                                onDuplicateSelected = viewModel::duplicateSelectedCustomTemplateElement,
+                                onBeginInteraction = viewModel::beginCustomTemplateInteraction,
+                                onUpdateElementBounds = viewModel::updateCustomTemplateElementBounds,
+                                onUpdateElementPlacement = viewModel::updateCustomTemplateElementPlacement,
+                                onUpdatePhotoBounds = viewModel::updateCustomTemplatePhotoBounds,
+                                onUpdateFrameSize = viewModel::updateCustomTemplateFrameSize,
+                                onUpdateOuterMargins = viewModel::updateCustomTemplateOuterMargins,
+                                onFramePreset = viewModel::applyCustomTemplateFramePreset,
+                                onPhotoAspectRatioResolved = viewModel::updateCustomTemplatePhotoAspectRatio,
+                                onFinishInteraction = viewModel::finishCustomTemplateInteraction,
+                                onDeleteSelected = viewModel::deleteSelectedCustomTemplateItem,
+                                onUndo = viewModel::undoCustomTemplateEdit,
+                                onRedo = viewModel::redoCustomTemplateEdit,
+                                onSave = viewModel::saveCustomTemplate,
+                                onNudgeSelected = viewModel::nudgeCustomTemplateSelection,
+                                onAlignSelected = viewModel::alignCustomTemplateSelection,
+                                onResetTemplate = viewModel::resetCustomTemplateDraft,
+                                onClose = viewModel::closeCustomTemplateEditor,
+                            )
+                        } else {
+                            TemplateSelectScreen(
+                                selectedTemplate = state.selectedTemplate,
+                                selectedCustomTemplateId = state.selectedCustomTemplateId.takeIf { CUSTOM_TEMPLATE_UI_ENABLED },
+                                customTemplates = if (CUSTOM_TEMPLATE_UI_ENABLED) state.customTemplates else emptyList(),
+                                buildInfo = state.selectedPhoto?.buildInfo ?: KeyboardBuildInfo(),
+                                selectedPhotoLabel = state.selectedPhoto?.displayName,
+                                customTemplateUiEnabled = CUSTOM_TEMPLATE_UI_ENABLED,
+                                onSelect = viewModel::selectTemplate,
+                                onSelectCustomTemplate = viewModel::selectCustomTemplate,
+                                onCreateTemplate = viewModel::openCustomTemplateEditor,
+                                onEditCustomTemplate = viewModel::editCustomTemplate,
+                                onDuplicateCustomTemplate = viewModel::duplicateCustomTemplate,
+                                onDeleteCustomTemplate = viewModel::deleteCustomTemplate,
+                            )
+                        }
+                    }
 
                     AppStep.Palette -> PaletteScreen(
                         state = state,
@@ -321,6 +408,24 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
                 }
             }
         }
+    }
+    pendingBackupRestoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingBackupRestoreUri = null },
+            title = { Text("백업 복원") },
+            text = { Text("백업의 설정을 적용하고 프리셋, 최근 내역, 완성 이미지를 현재 데이터와 합칩니다.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingBackupRestoreUri = null
+                        viewModel.restoreBackup(uri)
+                    },
+                ) { Text("복원") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBackupRestoreUri = null }) { Text("취소") }
+            },
+        )
     }
 }
 
@@ -438,19 +543,22 @@ private fun KeyxifStepIndicator(
         ) {
             steps.forEachIndexed { index, step ->
                 val selected = step == currentStep
+                val locked = state.photos.isEmpty() && step != AppStep.Photos
                 val completed = steps.indexOf(currentStep).let { currentIndex ->
                     currentIndex >= 0 && index < currentIndex
                 }
                 Surface(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .alpha(if (locked) 0.52f else 1f),
                     shape = MaterialTheme.shapes.medium,
                     color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
                     shadowElevation = if (selected) 1.dp else 0.dp,
                     onClick = { onStepClick(step) },
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(

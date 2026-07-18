@@ -51,6 +51,10 @@ object PresetData {
         const val IV_WORKS = "iv-works"
         const val NIUNIU = "niuniu"
         const val GRIT = "grit"
+        const val ALPS = "alps"
+        const val CHERRY = "cherry"
+        const val KMG = "kmg"
+        const val OTD = "otd"
     }
 
     object VendorIds {
@@ -79,7 +83,7 @@ object PresetData {
     }
 
     val logos = listOf(
-        logo(LogoIds.KEYXIF, "Keyxif", default = R.drawable.ic_keyxif, aliases = arrayOf("Keyxif")),
+        logo(LogoIds.KEYXIF, "Keyxif", white = R.drawable.logo_keyxif_w, black = R.drawable.logo_keyxif_b, aliases = arrayOf("Keyxif")),
         logo(LogoIds.QWERTYKEYS, "Qwertykeys", default = R.drawable.logo_qwertykeys, aliases = arrayOf("QK", "Neo Studio", "Neo"), colorPolicy = LogoColorPolicy.AUTO_MONO_TINT),
         logo(LogoIds.GEON, "Geonworks", white = R.drawable.logo_geon_w, black = R.drawable.logo_geon_b, aliases = arrayOf("Geon", "Geonworks")),
         logo(LogoIds.MODE, "Mode", white = R.drawable.logo_mode_w, black = R.drawable.logo_mode_b, aliases = arrayOf("Mode Designs", "Mode")),
@@ -122,6 +126,10 @@ object PresetData {
         logo(LogoIds.IV_WORKS, "IV Works", white = R.drawable.logo_iv_works_w, black = R.drawable.logo_iv_works_b, aliases = arrayOf("IVWorks", "IV Works")),
         logo(LogoIds.NIUNIU, "NiuNiu", white = R.drawable.logo_niuniu_w, black = R.drawable.logo_niuniu_b, aliases = arrayOf("Niu Niu", "Niuniu")),
         logo(LogoIds.GRIT, "Grit", white = R.drawable.logo_grit_w, black = R.drawable.logo_grit_b, aliases = arrayOf("Grit")),
+        logo(LogoIds.ALPS, "ALPS", white = R.drawable.logo_alps_w, black = R.drawable.logo_alps_b, aliases = arrayOf("Alps", "Alps Electric")),
+        logo(LogoIds.CHERRY, "Cherry", white = R.drawable.logo_cherry_w, black = R.drawable.logo_cherry_b, aliases = arrayOf("Cherry", "Cherry MX")),
+        logo(LogoIds.KMG, "KMG", white = R.drawable.logo_kmg_w, black = R.drawable.logo_kmg_b, aliases = arrayOf("KMG")),
+        logo(LogoIds.OTD, "OTD", white = R.drawable.logo_otd_w, black = R.drawable.logo_otd_b, aliases = arrayOf("OTD", "On The Desk")),
     ).sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
     val vendors = (
@@ -149,7 +157,7 @@ object PresetData {
         vendor(VendorIds.MERISI, "Merisi", LogoIds.MERISI),
         vendor(VendorIds.ORION, "Orion", LogoIds.ORION),
         vendor(VendorIds.KALAM, "Kalam", LogoIds.KALAM),
-        ) + GeneratedPresetData.vendors
+        ) + ImportedKeyboardPresetData.vendors + GeneratedPresetData.vendors
         ).distinctBy { it.id }
 
     val plates = listOf(
@@ -250,7 +258,7 @@ object PresetData {
             vendorId = VendorIds.MATRIX,
             aliases = listOf("Corsa"),
         ),
-        ) + GeneratedPresetData.housings
+        ) + ImportedKeyboardPresetData.housings + GeneratedPresetData.housings
         ).map { housing ->
             if (housing.vendorId == VendorIds.QWERTYKEYS && housing.name.startsWith("Neo")) {
                 housing.copy(logoId = LogoIds.NEO)

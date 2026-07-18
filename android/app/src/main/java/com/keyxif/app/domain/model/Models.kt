@@ -1,4 +1,4 @@
-package com.keyxif.app.domain.model
+﻿package com.keyxif.app.domain.model
 
 import android.net.Uri
 
@@ -255,8 +255,20 @@ data class AppSettings(
     val autoSelectLogoContrastVariant: Boolean = true,
     val languageMode: AppLanguageMode = AppLanguageMode.System,
     val themeMode: AppThemeMode = AppThemeMode.System,
+    val templateFont: TemplateFont = TemplateFont.System,
 )
 
+enum class TemplateFont(val labelKo: String) {
+    System("시스템 기본"),
+    IbmPlexSansKr("IBM Plex Sans KR"),
+    NotoSansKr("Noto Sans KR"),
+    NotoSerifKr("Noto Serif KR"),
+    NanumGothic("Nanum Gothic"),
+    GowunBatang("고운바탕"),
+    BlackHanSans("Black Han Sans"),
+    NanumPenScript("Nanum Pen Script"),
+    Gugi("구기"),
+}
 enum class AppLanguageMode {
     System,
     Korean,
@@ -323,6 +335,8 @@ enum class CardTemplate {
     MuseumMat,
     CompactTicket,
     CleanSignature,
+    EditorialCover,
+    SoftEditorial,
 }
 
 enum class RenderStatus {
@@ -352,6 +366,8 @@ fun CardTemplate.displayName(): String = when (this) {
     CardTemplate.MuseumMat -> "뮤지엄 매트"
     CardTemplate.CompactTicket -> "컴팩트 티켓"
     CardTemplate.CleanSignature -> "클린 시그니처"
+    CardTemplate.EditorialCover -> "에디토리얼 커버"
+    CardTemplate.SoftEditorial -> "소프트 에디토리얼"
     CardTemplate.PlainExport -> "Plain Export"
 }
 
@@ -367,6 +383,8 @@ fun CardTemplate.shortDescription(): String = when (this) {
     CardTemplate.MuseumMat -> "넓은 매트 여백과 작품 라벨 같은 정보를 만듭니다."
     CardTemplate.CompactTicket -> "하단 티켓형 라벨에 주요 정보를 작게 모읍니다."
     CardTemplate.CleanSignature -> "하단 여백에 하우징, 키캡, 닉네임을 서명처럼 정리합니다."
+    CardTemplate.EditorialCover -> "잡지 표지처럼 큰 마스트헤드와 커버라인을 사진 위에 얹습니다."
+    CardTemplate.SoftEditorial -> "사진을 조용히 살리는 얌전한 에디토리얼 오버레이입니다."
     CardTemplate.PlainExport -> "꾸밈 없이 원본 사진을 WEBP로 저장합니다."
 }
 

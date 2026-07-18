@@ -1,5 +1,6 @@
 package com.keyxif.app.domain.renderer
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,10 +9,13 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import androidx.core.content.res.ResourcesCompat
+import com.keyxif.app.R
 import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.BuildInfoRow
 import com.keyxif.app.domain.model.KeyboardBuildInfo
 import com.keyxif.app.domain.model.NicknameStyle
+import com.keyxif.app.domain.model.TemplateFont
 import com.keyxif.app.domain.model.displayNicknameOrNull
 import com.keyxif.app.domain.model.isMeaningfulBuildText
 import com.keyxif.app.domain.model.meaningfulBuildTextOrNull
@@ -22,12 +26,16 @@ import kotlin.math.min
 
 data class RenderAssets(
     val logoBitmap: Bitmap?,
+    val whiteLogoBitmap: Bitmap? = null,
+    val blackLogoBitmap: Bitmap? = null,
     val logoLabel: String,
     val paletteColors: List<Int> = emptyList(),
     val hasLogo: Boolean = logoBitmap != null || logoLabel.isMeaningfulBuildText(),
     val cardBackgroundColor: Int = Color.TRANSPARENT,
     val cardContentColor: Int = Color.BLACK,
+    val hasExplicitTextColor: Boolean = false,
     val logoTintColor: Int? = null,
+    val sampleRenderedColor: ((Float, Float) -> Int?)? = null,
 )
 
 enum class PaletteChipAlignment {
@@ -37,6 +45,41 @@ enum class PaletteChipAlignment {
 }
 
 object CanvasRenderUtils {
+    private val templateTypeface = ThreadLocal<Typeface?>()
+
+    fun <T> withTemplateFont(
+        context: Context,
+        settings: AppSettings,
+        block: () -> T,
+    ): T {
+        val previous = templateTypeface.get()
+        templateTypeface.set(resolveTemplateTypeface(context, settings.templateFont))
+        return try {
+            block()
+        } finally {
+            if (previous == null) {
+                templateTypeface.remove()
+            } else {
+                templateTypeface.set(previous)
+            }
+        }
+    }
+
+    private fun resolveTemplateTypeface(context: Context, font: TemplateFont): Typeface? {
+        val resId = when (font) {
+            TemplateFont.System -> return null
+            TemplateFont.IbmPlexSansKr -> R.font.ibm_plex_sans_kr_regular
+            TemplateFont.NotoSansKr -> R.font.noto_sans_kr_regular
+            TemplateFont.NotoSerifKr -> R.font.noto_serif_kr_regular
+            TemplateFont.NanumGothic -> R.font.nanum_gothic_regular
+            TemplateFont.GowunBatang -> R.font.gowun_batang_regular
+            TemplateFont.BlackHanSans -> R.font.black_han_sans_regular
+            TemplateFont.NanumPenScript -> R.font.nanum_pen_script_regular
+            TemplateFont.Gugi -> R.font.gugi_regular
+        }
+        return runCatching { ResourcesCompat.getFont(context, resId) }.getOrNull()
+    }
+
     fun paint(
         color: Int,
         size: Float,
@@ -54,11 +97,16 @@ object CanvasRenderUtils {
     }
 
     fun medium(size: Float, color: Int = Color.BLACK): Paint {
-        return paint(color, size, typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL))
+        val typeface = templateTypeface.get()
+            ?.let { Typeface.create(it, Typeface.BOLD) }
+            ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        return paint(color, size, typeface = typeface)
     }
 
     fun regular(size: Float, color: Int = Color.BLACK): Paint {
-        return paint(color, size, typeface = Typeface.create("sans-serif", Typeface.NORMAL))
+        val typeface = templateTypeface.get()
+            ?: Typeface.create("sans-serif", Typeface.NORMAL)
+        return paint(color, size, typeface = typeface)
     }
 
     fun ellipsize(

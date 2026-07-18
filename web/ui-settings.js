@@ -24,6 +24,7 @@
     { name: 'Session', ko: '세션 설정', en: 'Session', dko: '작업 임시 저장과 복구', den: 'Draft save and restore' },
     { name: 'Template', ko: '템플릿 설정', en: 'Templates', dko: '기본 템플릿과 오버레이', den: 'Defaults and overlays' },
     { name: 'Gallery', ko: '완성 이미지 관리', en: 'Finished Images', dko: '저장 목록 정리', den: 'Saved image list' },
+    { name: 'Backup', ko: '백업 및 복원', en: 'Backup & Restore', dko: '설정, 프리셋, 기록과 이미지 보관', den: 'Settings, presets, history, and images' },
     { name: 'About', ko: '앱 정보', en: 'About', dko: '버전과 개인정보 처리', den: 'Version and privacy' },
     { name: 'Developer', ko: '개발 정보', en: 'Developer', dko: '문의와 기술 정보', den: 'Contact and technical info' },
   ];
@@ -500,6 +501,37 @@
       return section(pageTitle('Gallery', text), rows);
     }
 
+    function pageBackup() {
+      var inputId = 'backup-file-' + (uid++);
+      var rows = [];
+      rows.push('<div class="body-medium">' + esc('설정, 빌드 프리셋, 최근 검색 내역과 완성 이미지 파일을 하나의 백업 파일로 보관합니다.') + '</div>');
+      rows.push('<div class="body-small muted">' + esc('브라우저 데이터가 지워지기 전에 백업 파일을 안전한 위치에 저장하세요. 복원 시 설정은 백업 값으로 바뀌고 목록과 이미지는 현재 데이터에 합쳐집니다.') + '</div>');
+      rows.push(actionButton({
+        label: '백업 파일 만들기', cls: 'btn btn-tonal full',
+        onClick: function () { actions.createBackup(); },
+      }));
+      rows.push('<input id="' + inputId + '" type="file" accept="application/json,.json" hidden>');
+      rows.push(actionButton({
+        label: '백업 파일 복원', cls: 'btn btn-outlined full',
+        onClick: function () {
+          var input = document.getElementById(inputId);
+          if (input) input.click();
+        },
+      }));
+      binds.push(function (root) {
+        var input = root.querySelector('#' + inputId);
+        if (!input) return;
+        input.addEventListener('change', function () {
+          var file = input.files && input.files[0];
+          if (file && window.confirm('백업의 설정을 적용하고 프리셋, 최근 내역, 완성 이미지를 현재 데이터와 합칠까요?')) {
+            actions.restoreBackupFile(file);
+          }
+          input.value = '';
+        });
+      });
+      return section(pageTitle('Backup', text), rows);
+    }
+
     /* ------------------------------------------------------------------ */
     /* 앱 정보 (spec 2.11 — 4행)                                            */
     /* ------------------------------------------------------------------ */
@@ -580,6 +612,7 @@
         case 'Session': html += pageSession(); break;
         case 'Template': html += pageTemplate(); break;
         case 'Gallery': html += pageGallery(); break;
+        case 'Backup': html += pageBackup(); break;
         case 'About': html += pageAbout(); break;
         case 'Developer': html += pageDeveloper(); break;
       }

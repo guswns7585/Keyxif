@@ -30,6 +30,20 @@ class RecentStore(context: Context) {
 
     fun removeNickname(value: String) = removeRecent(KEY_NICKNAME, value)
 
+    fun snapshot(): RecentSnapshot = RecentSnapshot(
+        housing = recentHousing(),
+        switches = recentSwitches(),
+        keycaps = recentKeycaps(),
+        nicknames = recentNicknames(),
+    )
+
+    fun merge(snapshot: RecentSnapshot, limit: Int = 50) {
+        snapshot.housing.asReversed().forEach { addHousing(it, limit) }
+        snapshot.switches.asReversed().forEach { addSwitch(it, limit) }
+        snapshot.keycaps.asReversed().forEach { addKeycap(it, limit) }
+        snapshot.nicknames.asReversed().forEach { addNickname(it, limit) }
+    }
+
     fun addBuildInfo(
         info: com.keyxif.app.domain.model.KeyboardBuildInfo,
         limit: Int = DEFAULT_MAX_RECENTS,
@@ -70,3 +84,10 @@ class RecentStore(context: Context) {
         const val SEPARATOR = "\u001F"
     }
 }
+
+data class RecentSnapshot(
+    val housing: List<String> = emptyList(),
+    val switches: List<String> = emptyList(),
+    val keycaps: List<String> = emptyList(),
+    val nicknames: List<String> = emptyList(),
+)

@@ -44,6 +44,11 @@ class BuildPresetRepository(context: Context) {
         persist(getAll().filterNot { it.id == id })
     }
 
+    fun mergeAll(presets: List<BuildPreset>) {
+        val importedIds = presets.mapTo(mutableSetOf()) { it.id }
+        persist((presets + getAll().filterNot { it.id in importedIds }).sortedByDescending { it.updatedAt })
+    }
+
     private fun persist(presets: List<BuildPreset>) {
         val array = JSONArray()
         presets.forEach { array.put(it.toJson()) }

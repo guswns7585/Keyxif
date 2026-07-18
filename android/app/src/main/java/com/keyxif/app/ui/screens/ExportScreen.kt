@@ -30,6 +30,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,6 +67,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.keyxif.app.domain.model.PhotoItem
 import com.keyxif.app.domain.model.RenderStatus
+import com.keyxif.app.domain.model.TemplateFont
 import com.keyxif.app.ui.KeyxifUiState
 import com.keyxif.app.ui.KeyxifViewModel
 import com.keyxif.app.ui.components.RenderedPreview
@@ -111,6 +114,12 @@ fun ExportScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        TemplateFontDropdown(
+            selected = state.settings.templateFont,
+            enabled = !state.exportProgress.isSaving,
+            onSelect = { font -> viewModel.updateSettings { it.copy(templateFont = font) } },
+        )
 
         state.exportProgress.message?.let { message ->
             Text(
@@ -274,6 +283,55 @@ private fun ExportPreviewCard(
                 onClick = onSave,
             ) {
                 Text("이 사진 저장")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TemplateFontDropdown(
+    selected: TemplateFont,
+    enabled: Boolean,
+    onSelect: (TemplateFont) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "템플릿 폰트",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = selected.labelKo,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Box {
+            FilledTonalButton(
+                enabled = enabled,
+                onClick = { expanded = true },
+            ) {
+                Text("변경")
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                TemplateFont.entries.forEach { font ->
+                    DropdownMenuItem(
+                        text = { Text(font.labelKo) },
+                        onClick = {
+                            expanded = false
+                            onSelect(font)
+                        },
+                    )
+                }
             }
         }
     }
@@ -491,6 +549,8 @@ private fun previewRenderKey(
     return listOf(
         prefix,
         state.selectedTemplate.name,
+        state.selectedCustomTemplateId.orEmpty(),
+        state.customTemplates.firstOrNull { it.id == state.selectedCustomTemplateId }?.updatedAt ?: 0L,
         photo.buildInfo.hashCode(),
         photo.analysisResult.paletteColors.hashCode(),
         state.settings.textScale,
@@ -506,6 +566,7 @@ private fun previewRenderKey(
         photo.renderStyle.paletteTextColorIndex,
         photo.renderStyle.customTextColor,
         state.settings.autoSelectLogoContrastVariant,
+        state.settings.templateFont.name,
     ).joinToString("-")
 }
 

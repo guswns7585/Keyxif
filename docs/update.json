@@ -1,10 +1,10 @@
 {
-  "latestVersionCode": 10,
-  "latestVersionName": "1.0.9",
+  "latestVersionCode": 11,
+  "latestVersionName": "1.1.0",
   "minRequiredVersionCode": 1,
   "title": "새 버전이 있습니다",
-  "message": "Keyxif 1.0.9 업데이트를 설치할 수 있습니다.",
-  "apkUrl": "https://github.com/guswns7585/Keyxif/releases/download/v1.0.9/keyxif-1.0.9.apk",
-  "releaseNoteUrl": "https://github.com/guswns7585/Keyxif/releases/tag/v1.0.9",
+  "message": "Keyxif 1.1.0 업데이트를 설치할 수 있습니다.",
+  "apkUrl": "https://github.com/guswns7585/Keyxif/releases/download/v1.1.0/keyxif-1.1.0.apk",
+  "releaseNoteUrl": "https://github.com/guswns7585/Keyxif/releases/tag/v1.1.0",
   "forceUpdate": false
 }

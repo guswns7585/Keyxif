@@ -19,8 +19,10 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.keyxif.app.BuildConfig
 import com.keyxif.app.data.exported.ExportedImageRepository
+import com.keyxif.app.data.backup.KeyxifBackupRepository
 import com.keyxif.app.data.repository.AppSettingsRepository
 import com.keyxif.app.data.repository.BuildPresetRepository
+import com.keyxif.app.data.repository.CustomTemplateRepository
 import com.keyxif.app.data.repository.DraftSessionRepository
 import com.keyxif.app.data.repository.PresetChoice
 import com.keyxif.app.data.repository.PresetRepository
@@ -28,13 +30,38 @@ import com.keyxif.app.data.repository.RecentStore
 import com.keyxif.app.data.update.UpdateRepository
 import com.keyxif.app.data.update.UpdateDownloadWorker
 import com.keyxif.app.domain.analysis.PhotoPaletteAnalyzer
+import com.keyxif.app.domain.customtemplate.NormalizedBounds
+import com.keyxif.app.domain.customtemplate.avoidPhotoSafeArea
+import com.keyxif.app.domain.customtemplate.cardBounds
+import com.keyxif.app.domain.customtemplate.centeredContainPhotoBounds
+import com.keyxif.app.domain.customtemplate.elementBounds
+import com.keyxif.app.domain.customtemplate.frameElementsCollidingWithPhoto
+import com.keyxif.app.domain.customtemplate.moveBounds
+import com.keyxif.app.domain.customtemplate.photoBounds
+import com.keyxif.app.domain.customtemplate.snapBounds
+import com.keyxif.app.domain.customtemplate.validateCardSpace
+import com.keyxif.app.domain.customtemplate.withBounds
 import com.keyxif.app.domain.export.ExportWorkPayload
 import com.keyxif.app.domain.export.ExportWorkPayloadCodec
 import com.keyxif.app.domain.export.ExportWorker
 import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.AppStep
 import com.keyxif.app.domain.model.BuildPreset
+import com.keyxif.app.domain.model.CardStyle
 import com.keyxif.app.domain.model.CardTemplate
+import com.keyxif.app.domain.model.CustomTemplate
+import com.keyxif.app.domain.model.CustomTemplateEditorState
+import com.keyxif.app.domain.model.CustomTemplateEditorTab
+import com.keyxif.app.domain.model.CustomTemplateSelection
+import com.keyxif.app.domain.model.CanvasCoordinateSpace
+import com.keyxif.app.domain.model.BuildInfoField
+import com.keyxif.app.domain.model.CanvasElement
+import com.keyxif.app.domain.model.CustomTemplateCardStylePreset
+import com.keyxif.app.domain.model.CustomTemplateCardSpaceSeverity
+import com.keyxif.app.domain.model.CUSTOM_TEMPLATE_FRAME_CONTAINER_ID
+import com.keyxif.app.domain.model.CUSTOM_TEMPLATE_PHOTO_CONTAINER_ID
+import com.keyxif.app.domain.model.ElementContent
+import com.keyxif.app.domain.model.FrameAspectPreset
 import com.keyxif.app.domain.model.DraftSession
 import com.keyxif.app.domain.model.ExportProgress
 import com.keyxif.app.domain.model.ExportedImage
@@ -55,6 +82,12 @@ import com.keyxif.app.domain.model.UpdateCheckState
 import com.keyxif.app.domain.model.UpdateDownloadState
 import com.keyxif.app.domain.model.defaultPaletteAnalysisRect
 import com.keyxif.app.domain.model.defaultPaletteAnalysisQuad
+import com.keyxif.app.domain.model.createBlankCustomTemplate
+import com.keyxif.app.domain.model.createCustomTemplateColorChipElement
+import com.keyxif.app.domain.model.createCustomTemplateInternalCard
+import com.keyxif.app.domain.model.createCustomTemplateLogoElement
+import com.keyxif.app.domain.model.createCustomTemplateTextElement
+import com.keyxif.app.domain.model.toCardStyle
 import com.keyxif.app.domain.model.toQuad
 import com.keyxif.app.domain.renderer.KeyxifCanvasRenderer
 import com.keyxif.app.util.BitmapUtils
@@ -80,6 +113,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
+private const val CUSTOM_TEMPLATE_RENDERING_ENABLED = false
+
 data class KeyxifUiState(
     val currentStep: AppStep = AppStep.Photos,
     val photos: List<PhotoItem> = emptyList(),
@@ -87,6 +122,9 @@ data class KeyxifUiState(
     val selectedExportPhotoIds: Set<String> = emptySet(),
     val expandedExportPhotoId: String? = null,
     val selectedTemplate: CardTemplate = CardTemplate.ClassicFrame,
+    val selectedCustomTemplateId: String? = null,
+    val customTemplates: List<CustomTemplate> = emptyList(),
+    val customTemplateEditorState: CustomTemplateEditorState? = null,
     val settings: AppSettings = AppSettings(),
     val isSettingsOpen: Boolean = false,
     val settingsPageName: String? = null,
@@ -112,15 +150,48 @@ data class KeyxifUiState(
         get() = photos.firstOrNull { it.id == selectedPhotoId } ?: photos.firstOrNull()
 }
 
+enum class CustomTemplateAlignment {
+    Left,
+    CenterX,
+    Right,
+    Top,
+    CenterY,
+    Bottom,
+}
+
+private data class CustomTemplateOuterMargins(
+    val left: Float,
+    val right: Float,
+    val top: Float,
+    val bottom: Float,
+)
+
+private fun customTemplateOuterMarginsFromPhoto(
+    photo: com.keyxif.app.domain.model.CustomPhotoPlacement,
+): CustomTemplateOuterMargins {
+    val width = photo.width.coerceIn(0.01f, 1f)
+    val height = photo.height.coerceIn(0.01f, 1f)
+    val x = photo.x.coerceIn(0f, 1f - width)
+    val y = photo.y.coerceIn(0f, 1f - height)
+    return CustomTemplateOuterMargins(
+        left = (x / width).coerceIn(0f, 3f),
+        right = ((1f - x - width) / width).coerceIn(0f, 3f),
+        top = (y / height).coerceIn(0f, 3f),
+        bottom = ((1f - y - height) / height).coerceIn(0f, 3f),
+    )
+}
+
 class KeyxifViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     private val recentStore = RecentStore(application)
     private val presetRepository = PresetRepository()
     private val buildPresetRepository = BuildPresetRepository(application)
+    private val customTemplateRepository = CustomTemplateRepository(application)
     private val settingsRepository = AppSettingsRepository(application)
     private val draftSessionRepository = DraftSessionRepository(application)
     private val exportedImageRepository = ExportedImageRepository(application)
+    private val backupRepository = KeyxifBackupRepository(application)
     private val updateRepository = UpdateRepository(application)
     private val workManager = WorkManager.getInstance(application)
     private val renderer = KeyxifCanvasRenderer(presetRepository)
@@ -135,6 +206,7 @@ class KeyxifViewModel(
     private var autoUpdateCheckAttempted = false
     private var awaitingUnknownSourcesPermission = false
     private var paletteAnalysisJob: Job? = null
+    private var customTemplateGestureStart: CustomTemplate? = null
 
     private val _uiState = MutableStateFlow(KeyxifUiState())
     val uiState: StateFlow<KeyxifUiState> = _uiState.asStateFlow()
@@ -184,6 +256,41 @@ class KeyxifViewModel(
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch(Dispatchers.IO) {
             settingsRepository.update(transform)
+        }
+    }
+
+    fun createBackup(destination: Uri) {
+        val settings = uiState.value.settings
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { backupRepository.create(destination, settings) }
+                .onSuccess { summary ->
+                    _uiState.update {
+                        it.copy(
+                            uiMessage = "백업 완료: 프리셋 ${summary.presetCount}개, 최근 내역 ${summary.recentCount}개, 완성 이미지 ${summary.imageCount}개",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(uiMessage = "백업 실패: ${error.message ?: "파일을 만들 수 없습니다."}") }
+                }
+        }
+    }
+
+    fun restoreBackup(source: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { backupRepository.restore(source) }
+                .onSuccess { summary ->
+                    settingsRepository.update { summary.settings }
+                    refreshPersistentData()
+                    _uiState.update {
+                        it.copy(
+                            uiMessage = "복원 완료: 프리셋 ${summary.presetCount}개, 최근 내역 ${summary.recentCount}개, 완성 이미지 ${summary.imageCount}개",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(uiMessage = "복원 실패: ${error.message ?: "백업 파일을 읽을 수 없습니다."}") }
+                }
         }
     }
 
@@ -319,6 +426,7 @@ class KeyxifViewModel(
         _uiState.update {
             it.copy(
                 currentStep = targetStep,
+                customTemplateEditorState = null,
                 isSettingsOpen = false,
                 settingsPageName = null,
                 isGalleryOpen = false,
@@ -328,6 +436,10 @@ class KeyxifViewModel(
     }
 
     fun navigateToPreviousStep() {
+        if (uiState.value.customTemplateEditorState != null) {
+            closeCustomTemplateEditor()
+            return
+        }
         previousStep(uiState.value)?.let(::navigateToStep)
     }
 
@@ -340,6 +452,10 @@ class KeyxifViewModel(
             }
             state.isGalleryOpen -> {
                 closeGallery()
+                true
+            }
+            state.customTemplateEditorState != null -> {
+                closeCustomTemplateEditor()
                 true
             }
             state.currentStep != AppStep.Photos -> {
@@ -689,9 +805,916 @@ class KeyxifViewModel(
     }
 
     fun selectTemplate(template: CardTemplate) {
-        _uiState.update { it.copy(selectedTemplate = template) }
+        _uiState.update {
+            it.copy(
+                selectedTemplate = template,
+                selectedCustomTemplateId = null,
+                customTemplateEditorState = null,
+            )
+        }
         if (uiState.value.settings.rememberLastTemplate) {
             updateSettings { it.copy(defaultTemplate = template) }
+        }
+    }
+
+    fun selectCustomTemplate(templateId: String) {
+        _uiState.update { state ->
+            if (state.customTemplates.none { it.id == templateId }) {
+                state
+            } else {
+                state.copy(
+                    selectedCustomTemplateId = templateId,
+                    customTemplateEditorState = null,
+                    uiMessage = "커스텀 템플릿을 선택했습니다. 최종 저장 적용은 다음 단계에서 연결됩니다.",
+                )
+            }
+        }
+    }
+
+    fun openCustomTemplateEditor() {
+        _uiState.update { state ->
+            state.copy(
+                currentStep = AppStep.Template,
+                customTemplateEditorState = createEditorState(createBlankCustomTemplate()),
+                isSettingsOpen = false,
+                settingsPageName = null,
+                isGalleryOpen = false,
+            )
+        }
+    }
+
+    fun editCustomTemplate(templateId: String) {
+        _uiState.update { state ->
+            val template = state.customTemplates.firstOrNull { it.id == templateId } ?: return@update state
+            state.copy(
+                currentStep = AppStep.Template,
+                customTemplateEditorState = createEditorState(template),
+                selectedCustomTemplateId = templateId,
+                isSettingsOpen = false,
+                settingsPageName = null,
+                isGalleryOpen = false,
+            )
+        }
+    }
+
+    fun saveCustomTemplate(name: String) {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val draftName = name.trim().ifBlank { editorState.draft.name.ifBlank { "새 커스텀 템플릿" } }
+        val namedDraft = editorState.draft.copy(name = draftName)
+        val warnings = validateCardSpace(namedDraft) { element ->
+            element.validationText(state.selectedPhoto?.buildInfo ?: KeyboardBuildInfo())
+        }
+        val blocking = warnings.firstOrNull { it.severity == CustomTemplateCardSpaceSeverity.Blocking }
+        if (blocking != null) {
+            _uiState.update {
+                it.withValidatedCustomTemplateEditor(
+                    editorState.copy(
+                        draft = namedDraft,
+                        selectedTarget = CustomTemplateSelection.Card,
+                        selectedElementId = null,
+                        selectedCardId = blocking.cardId,
+                    ),
+                ).copy(uiMessage = "공간이 부족합니다. 카드 크기를 늘리거나 요소를 줄여주세요.")
+            }
+            return
+        }
+        val collisionCount = frameElementsCollidingWithPhoto(namedDraft).size
+        if (collisionCount > 0) {
+            _uiState.update {
+                it.copy(
+                    customTemplateEditorState = editorState.copy(
+                        draft = namedDraft,
+                        selectedTarget = CustomTemplateSelection.Frame,
+                        selectedElementId = null,
+                        selectedCardId = null,
+                        collisionWarning = "사진 위치가 프레임 요소 ${collisionCount}개와 충돌합니다. 저장 전 위치를 조정해 주세요.",
+                    ),
+                    uiMessage = "사진과 겹치는 프레임 요소를 먼저 조정해 주세요.",
+                )
+            }
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val saved = customTemplateRepository.save(namedDraft)
+            val templates = customTemplateRepository.getAll()
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        customTemplates = templates,
+                        selectedCustomTemplateId = saved.id,
+                        customTemplateEditorState = createEditorState(saved).copy(isDirty = false),
+                        uiMessage = "커스텀 템플릿을 저장했습니다.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun duplicateCustomTemplate(templateId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val copy = customTemplateRepository.duplicate(templateId)
+            val templates = customTemplateRepository.getAll()
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        customTemplates = templates,
+                        selectedCustomTemplateId = copy?.id ?: it.selectedCustomTemplateId,
+                        uiMessage = if (copy != null) "커스텀 템플릿을 복제했습니다." else "복제할 템플릿을 찾을 수 없습니다.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteCustomTemplate(templateId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            customTemplateRepository.delete(templateId)
+            val templates = customTemplateRepository.getAll()
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        customTemplates = templates,
+                        selectedCustomTemplateId = it.selectedCustomTemplateId.takeIf { id -> id != templateId },
+                        customTemplateEditorState = it.customTemplateEditorState.takeIf { editor -> editor?.draft?.id != templateId },
+                        uiMessage = "커스텀 템플릿을 삭제했습니다.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun closeCustomTemplateEditor() {
+        _uiState.update { it.copy(customTemplateEditorState = null) }
+    }
+
+    fun resetCustomTemplateDraft() {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val reset = createBlankCustomTemplate(
+                id = editorState.draft.id,
+                now = editorState.draft.createdAt,
+            ).copy(
+                name = editorState.draft.name,
+                updatedAt = System.currentTimeMillis(),
+            )
+            state.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = reset,
+                    selectedTarget = CustomTemplateSelection.Photo,
+                    selectedElementId = null,
+                    selectedCardId = null,
+                    snapGuides = emptyList(),
+                    collisionWarning = null,
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun selectCustomTemplateEditorTab(tab: CustomTemplateEditorTab) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    activeTab = tab,
+                    selectedTarget = if (tab == CustomTemplateEditorTab.Frame) {
+                        CustomTemplateSelection.Frame
+                    } else {
+                        editorState.selectedTarget
+                    },
+                    selectedElementId = if (tab == CustomTemplateEditorTab.Frame) null else editorState.selectedElementId,
+                    selectedCardId = if (tab == CustomTemplateEditorTab.Frame) null else editorState.selectedCardId,
+                ),
+            )
+        }
+    }
+
+    fun selectCustomTemplateElement(elementId: String?) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    selectedTarget = if (elementId == null) {
+                        CustomTemplateSelection.Photo
+                    } else {
+                        CustomTemplateSelection.Element
+                    },
+                    selectedElementId = elementId,
+                    selectedCardId = if (elementId == null) null else editorState.selectedCardId,
+                ),
+            )
+        }
+    }
+
+    fun selectCustomTemplateCard(cardId: String?) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    selectedTarget = if (cardId == null) CustomTemplateSelection.Photo else CustomTemplateSelection.Card,
+                    selectedElementId = null,
+                    selectedCardId = cardId,
+                ),
+            )
+        }
+    }
+
+    fun selectCustomTemplateTarget(target: CustomTemplateSelection) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    selectedTarget = target,
+                    selectedElementId = if (target == CustomTemplateSelection.Element) {
+                        editorState.selectedElementId
+                    } else {
+                        null
+                    },
+                    selectedCardId = if (target == CustomTemplateSelection.Card) {
+                        editorState.selectedCardId
+                    } else {
+                        null
+                    },
+                ),
+            )
+        }
+    }
+
+    fun beginCustomTemplateInteraction() {
+        customTemplateGestureStart = uiState.value.customTemplateEditorState?.draft
+    }
+
+    fun updateCustomTemplateElementBounds(
+        elementId: String,
+        bounds: NormalizedBounds,
+    ) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val selected = editorState.draft.elements.firstOrNull { it.id == elementId } ?: return@update state
+            val siblings = editorState.draft.elements
+                .filter {
+                    it.id != elementId &&
+                        !it.hidden &&
+                        it.coordinateSpace == selected.coordinateSpace &&
+                        it.containerId == selected.containerId
+                }
+                .map(::elementBounds)
+            val snapped = snapBounds(
+                bounds = bounds,
+                coordinateSpace = selected.coordinateSpace,
+                containerId = selected.containerId,
+                siblings = siblings,
+                safePadding = if (selected.coordinateSpace == CanvasCoordinateSpace.Frame) 0.018f else 0f,
+            )
+            val updatedDraft = editorState.draft.copy(
+                elements = editorState.draft.elements.map { element ->
+                    if (element.id == elementId) {
+                        val safeBounds = if (element.coordinateSpace == CanvasCoordinateSpace.Frame) {
+                            avoidPhotoSafeArea(snapped.bounds, editorState.draft.photoPlacement)
+                        } else {
+                            snapped.bounds
+                        }
+                        element.withBounds(safeBounds)
+                    } else {
+                        element
+                    }
+                },
+                updatedAt = System.currentTimeMillis(),
+            )
+            state.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = updatedDraft,
+                    selectedElementId = elementId,
+                    selectedCardId = updatedDraft.elements
+                        .firstOrNull { it.id == elementId }
+                        ?.containerId
+                        ?.takeIf { id ->
+                            updatedDraft.elements.firstOrNull { it.id == elementId }?.coordinateSpace ==
+                                CanvasCoordinateSpace.InternalCard
+                        },
+                    snapGuides = snapped.guides,
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun updateCustomTemplateElementPlacement(
+        elementId: String,
+        bounds: NormalizedBounds,
+        coordinateSpace: CanvasCoordinateSpace,
+        containerId: String,
+    ) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val selected = editorState.draft.elements.firstOrNull { it.id == elementId } ?: return@update state
+            val siblings = editorState.draft.elements
+                .filter {
+                    it.id != elementId &&
+                        !it.hidden &&
+                        it.coordinateSpace == coordinateSpace &&
+                        it.containerId == containerId
+                }
+                .map(::elementBounds)
+            val snapped = snapBounds(
+                bounds = bounds,
+                coordinateSpace = coordinateSpace,
+                containerId = containerId,
+                siblings = siblings,
+                safePadding = 0.018f,
+                threshold = 0.018f,
+            )
+            val safeBounds = if (coordinateSpace == CanvasCoordinateSpace.Frame) {
+                avoidPhotoSafeArea(snapped.bounds, editorState.draft.photoPlacement)
+            } else {
+                snapped.bounds
+            }
+            val updatedDraft = editorState.draft.copy(
+                elements = editorState.draft.elements.map { element ->
+                    if (element.id == selected.id) {
+                        element.copy(
+                            coordinateSpace = coordinateSpace,
+                            containerId = containerId,
+                        ).withBounds(safeBounds)
+                    } else {
+                        element
+                    }
+                },
+                updatedAt = System.currentTimeMillis(),
+            )
+            state.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = updatedDraft,
+                    selectedTarget = CustomTemplateSelection.Element,
+                    selectedElementId = elementId,
+                    selectedCardId = containerId.takeIf { coordinateSpace == CanvasCoordinateSpace.InternalCard },
+                    snapGuides = snapped.guides,
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun nudgeCustomTemplateSelection(dx: Float, dy: Float) {
+        val editorState = uiState.value.customTemplateEditorState ?: return
+        if (editorState.selectedTarget == CustomTemplateSelection.Frame) return
+        beginCustomTemplateInteraction()
+        when (editorState.selectedTarget) {
+            CustomTemplateSelection.Element -> {
+                val element = editorState.selectedElementId
+                    ?.let { id -> editorState.draft.elements.firstOrNull { it.id == id } }
+                    ?: run {
+                        finishCustomTemplateInteraction()
+                        return
+                    }
+                updateCustomTemplateElementBounds(element.id, moveBounds(elementBounds(element), dx, dy))
+            }
+            CustomTemplateSelection.Card -> {
+                val card = editorState.selectedCardId
+                    ?.let { id -> editorState.draft.internalCards.firstOrNull { it.id == id } }
+                    ?: run {
+                        finishCustomTemplateInteraction()
+                        return
+                    }
+                updateCustomTemplateCardBounds(card.id, moveBounds(cardBounds(card), dx, dy))
+            }
+            CustomTemplateSelection.Photo -> {
+                updateCustomTemplatePhotoBounds(moveBounds(photoBounds(editorState.draft.photoPlacement), dx, dy))
+            }
+            CustomTemplateSelection.Frame -> Unit
+        }
+        finishCustomTemplateInteraction()
+    }
+
+    fun alignCustomTemplateSelection(alignment: CustomTemplateAlignment) {
+        val editorState = uiState.value.customTemplateEditorState ?: return
+        fun aligned(bounds: NormalizedBounds): NormalizedBounds {
+            return when (alignment) {
+                CustomTemplateAlignment.Left -> bounds.copy(x = 0f)
+                CustomTemplateAlignment.CenterX -> bounds.copy(x = (1f - bounds.width) / 2f)
+                CustomTemplateAlignment.Right -> bounds.copy(x = 1f - bounds.width)
+                CustomTemplateAlignment.Top -> bounds.copy(y = 0f)
+                CustomTemplateAlignment.CenterY -> bounds.copy(y = (1f - bounds.height) / 2f)
+                CustomTemplateAlignment.Bottom -> bounds.copy(y = 1f - bounds.height)
+            }
+        }
+        if (editorState.selectedTarget == CustomTemplateSelection.Frame) return
+        beginCustomTemplateInteraction()
+        when (editorState.selectedTarget) {
+            CustomTemplateSelection.Element -> {
+                val element = editorState.selectedElementId
+                    ?.let { id -> editorState.draft.elements.firstOrNull { it.id == id } }
+                    ?: run {
+                        finishCustomTemplateInteraction()
+                        return
+                    }
+                updateCustomTemplateElementBounds(element.id, aligned(elementBounds(element)))
+            }
+            CustomTemplateSelection.Card -> {
+                val card = editorState.selectedCardId
+                    ?.let { id -> editorState.draft.internalCards.firstOrNull { it.id == id } }
+                    ?: run {
+                        finishCustomTemplateInteraction()
+                        return
+                    }
+                updateCustomTemplateCardBounds(card.id, aligned(cardBounds(card)))
+            }
+            CustomTemplateSelection.Photo -> {
+                updateCustomTemplatePhotoBounds(aligned(photoBounds(editorState.draft.photoPlacement)))
+            }
+            CustomTemplateSelection.Frame -> Unit
+        }
+        finishCustomTemplateInteraction()
+    }
+
+    fun addCustomTemplateTextElement(field: BuildInfoField) {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState
+        if (editorState != null) {
+            val duplicate = editorState.draft.elements.firstOrNull { element ->
+                !element.hidden &&
+                    (element.content as? ElementContent.BuildField)?.field == field
+            }
+            if (duplicate != null) {
+                _uiState.update {
+                    it.copy(
+                        customTemplateEditorState = editorState.copy(
+                            activeTab = CustomTemplateEditorTab.Element,
+                            selectedTarget = CustomTemplateSelection.Element,
+                            selectedElementId = duplicate.id,
+                            selectedCardId = duplicate.containerId.takeIf { duplicate.coordinateSpace == CanvasCoordinateSpace.InternalCard },
+                        ),
+                        uiMessage = "이미 추가된 텍스트 요소입니다.",
+                    )
+                }
+                return
+            }
+        }
+        addCustomTemplateElement { space, zIndex ->
+            createCustomTemplateTextElement(field, space, zIndex)
+        }
+    }
+
+    fun addCustomTemplateLogoElement() {
+        addCustomTemplateElement { space, zIndex ->
+            createCustomTemplateLogoElement(space, zIndex)
+        }
+    }
+
+    fun addCustomTemplateColorChipElement() {
+        addCustomTemplateElement { space, zIndex ->
+            createCustomTemplateColorChipElement(space, zIndex)
+        }
+    }
+
+    fun addCustomTemplateInternalCard(stylePreset: CustomTemplateCardStylePreset) {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val nextZ = (editorState.draft.internalCards.maxOfOrNull { it.zIndex } ?: 0) + 1
+        val card = createCustomTemplateInternalCard(nextZ, stylePreset)
+        _uiState.update {
+            it.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = editorState.draft.copy(
+                        internalCards = editorState.draft.internalCards + card,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    activeTab = CustomTemplateEditorTab.Card,
+                    selectedTarget = CustomTemplateSelection.Card,
+                    selectedElementId = null,
+                    selectedCardId = card.id,
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun updateCustomTemplateCardBounds(
+        cardId: String,
+        bounds: NormalizedBounds,
+    ) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val siblings = editorState.draft.internalCards
+                .filter { it.id != cardId && !it.hidden }
+                .map { NormalizedBounds(it.x, it.y, it.width, it.height) }
+            val snapped = snapBounds(
+                bounds = bounds,
+                coordinateSpace = CanvasCoordinateSpace.Photo,
+                containerId = CUSTOM_TEMPLATE_PHOTO_CONTAINER_ID,
+                siblings = siblings,
+            )
+            val updatedDraft = editorState.draft.copy(
+                internalCards = editorState.draft.internalCards.map { card ->
+                    if (card.id == cardId) card.withBounds(snapped.bounds) else card
+                },
+                updatedAt = System.currentTimeMillis(),
+            )
+            state.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = updatedDraft,
+                    selectedTarget = CustomTemplateSelection.Card,
+                    selectedElementId = null,
+                    selectedCardId = cardId,
+                    snapGuides = snapped.guides,
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun applySelectedCustomTemplateCardStyle(stylePreset: CustomTemplateCardStylePreset) {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val selectedCardId = editorState.selectedCardId ?: return
+        val nextStyle = stylePreset.toCardStyle()
+        _uiState.update {
+            it.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = editorState.draft.copy(
+                        internalCards = editorState.draft.internalCards.map { card ->
+                            if (card.id == selectedCardId) card.copy(style = nextStyle) else card
+                        },
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    selectedTarget = CustomTemplateSelection.Card,
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun updateSelectedCustomTemplateCardStyle(style: CardStyle) {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val selectedCardId = editorState.selectedCardId ?: return
+        _uiState.update {
+            it.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = editorState.draft.copy(
+                        internalCards = editorState.draft.internalCards.map { card ->
+                            if (card.id == selectedCardId) card.copy(style = style) else card
+                        },
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    selectedTarget = CustomTemplateSelection.Card,
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun duplicateSelectedCustomTemplateElement() {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val selected = editorState.selectedElementId
+            ?.let { id -> editorState.draft.elements.firstOrNull { it.id == id } }
+            ?: return
+        val nextZ = (editorState.draft.elements.maxOfOrNull { it.zIndex } ?: 0) + 1
+        val duplicated = selected.copy(
+            id = UUID.randomUUID().toString(),
+            x = (selected.x + 0.035f).coerceIn(0f, 1f - selected.width),
+            y = (selected.y + 0.035f).coerceIn(0f, 1f - selected.height),
+            zIndex = nextZ,
+        ).let { element ->
+            if (element.coordinateSpace == CanvasCoordinateSpace.Frame) {
+                element.withBounds(avoidPhotoSafeArea(NormalizedBounds(element.x, element.y, element.width, element.height), editorState.draft.photoPlacement))
+            } else {
+                element
+            }
+        }
+        _uiState.update {
+            it.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = editorState.draft.copy(
+                        elements = editorState.draft.elements + duplicated,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    selectedTarget = CustomTemplateSelection.Element,
+                    selectedElementId = duplicated.id,
+                    selectedCardId = duplicated.containerId.takeIf {
+                        duplicated.coordinateSpace == CanvasCoordinateSpace.InternalCard
+                    },
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun updateCustomTemplatePhotoBounds(bounds: NormalizedBounds) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val draft = editorState.draft
+            val contained = draft.photoPlacement.withBounds(bounds = bounds, frameAspectRatio = draft.frame.aspectRatio)
+            val snapped = snapBounds(
+                bounds = photoBounds(contained),
+                coordinateSpace = CanvasCoordinateSpace.Frame,
+                containerId = CUSTOM_TEMPLATE_FRAME_CONTAINER_ID,
+                safePadding = 0f,
+            )
+            val nextPhoto = contained.withBounds(bounds = snapped.bounds, frameAspectRatio = draft.frame.aspectRatio)
+            val updatedDraft = draft.copy(
+                photoPlacement = nextPhoto,
+                updatedAt = System.currentTimeMillis(),
+            )
+            val collisionCount = frameElementsCollidingWithPhoto(updatedDraft).size
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    draft = updatedDraft,
+                    selectedTarget = CustomTemplateSelection.Photo,
+                    selectedElementId = null,
+                    selectedCardId = null,
+                    snapGuides = snapped.guides,
+                    collisionWarning = collisionCount
+                        .takeIf { it > 0 }
+                        ?.let { "사진 위치가 프레임 요소 ${it}개와 충돌합니다. 저장 전 위치를 조정해 주세요." },
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun updateCustomTemplateFrameSize(
+        logicalWidth: Float,
+        logicalHeight: Float,
+    ) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val draft = editorState.draft
+            val photo = draft.photoPlacement
+            val safeWidth = maxOf(logicalWidth, 0.65f, photo.width)
+            val safeHeight = maxOf(logicalHeight, 0.65f, photo.height)
+            val nextAspect = safeWidth / safeHeight
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    draft = draft.copy(
+                        frame = draft.frame.copy(
+                            logicalWidth = safeWidth,
+                            logicalHeight = safeHeight,
+                            aspectRatio = nextAspect,
+                        ),
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    selectedTarget = CustomTemplateSelection.Frame,
+                    selectedElementId = null,
+                    selectedCardId = null,
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun updateCustomTemplateOuterMargins(
+        left: Float,
+        right: Float,
+        top: Float,
+        bottom: Float,
+    ) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val draft = editorState.draft
+            val margins = CustomTemplateOuterMargins(
+                left = left.coerceIn(0f, 3f),
+                right = right.coerceIn(0f, 3f),
+                top = top.coerceIn(0f, 3f),
+                bottom = bottom.coerceIn(0f, 3f),
+            )
+            val totalWidth = 1f + margins.left + margins.right
+            val totalHeight = 1f + margins.top + margins.bottom
+            val photoAspect = draft.photoPlacement.aspectRatio.coerceAtLeast(0.05f)
+            val logicalWidth = totalWidth
+            val logicalHeight = totalHeight / photoAspect
+            val photoBounds = NormalizedBounds(
+                x = margins.left / totalWidth,
+                y = margins.top / totalHeight,
+                width = 1f / totalWidth,
+                height = 1f / totalHeight,
+            )
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    draft = draft.copy(
+                        frame = draft.frame.copy(
+                            logicalWidth = logicalWidth,
+                            logicalHeight = logicalHeight,
+                            aspectRatio = logicalWidth / logicalHeight,
+                        ),
+                        photoPlacement = draft.photoPlacement.copy(
+                            x = photoBounds.x,
+                            y = photoBounds.y,
+                            width = photoBounds.width,
+                            height = photoBounds.height,
+                            scale = photoBounds.width,
+                        ),
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    selectedTarget = CustomTemplateSelection.Frame,
+                    selectedElementId = null,
+                    selectedCardId = null,
+                    snapGuides = emptyList(),
+                    collisionWarning = null,
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    private fun addCustomTemplateElement(factory: (CanvasCoordinateSpace, Int) -> CanvasElement) {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val selectedCardId = editorState.selectedCardId
+        val targetSpace = when {
+            editorState.selectedTarget == CustomTemplateSelection.Card && selectedCardId != null -> CanvasCoordinateSpace.InternalCard
+            editorState.selectedTarget == CustomTemplateSelection.Photo -> CanvasCoordinateSpace.Photo
+            else -> CanvasCoordinateSpace.Frame
+        }
+        val nextZ = (editorState.draft.elements.maxOfOrNull { it.zIndex } ?: 0) + 1
+        val element = factory(targetSpace, nextZ).let { created ->
+            val withContainer = if (targetSpace == CanvasCoordinateSpace.InternalCard && selectedCardId != null) {
+                created.copy(containerId = selectedCardId, x = 0.12f, y = 0.12f, width = created.width.coerceAtMost(0.76f))
+            } else {
+                created
+            }
+            if (withContainer.coordinateSpace == CanvasCoordinateSpace.Frame) {
+                withContainer.withBounds(
+                    avoidPhotoSafeArea(
+                        bounds = NormalizedBounds(withContainer.x, withContainer.y, withContainer.width, withContainer.height),
+                        photo = editorState.draft.photoPlacement,
+                    ),
+                )
+            } else {
+                withContainer
+            }
+        }
+        _uiState.update {
+            it.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = editorState.draft.copy(
+                        elements = editorState.draft.elements + element,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    activeTab = CustomTemplateEditorTab.Element,
+                    selectedTarget = CustomTemplateSelection.Element,
+                    selectedElementId = element.id,
+                    selectedCardId = selectedCardId.takeIf { targetSpace == CanvasCoordinateSpace.InternalCard },
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun applyCustomTemplateFramePreset(preset: FrameAspectPreset) {
+        beginCustomTemplateInteraction()
+        updateCustomTemplateFrameSize(preset.width, preset.height)
+        finishCustomTemplateInteraction()
+    }
+
+    fun updateCustomTemplatePhotoAspectRatio(aspectRatio: Float) {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val draft = editorState.draft
+            val safeRatio = aspectRatio.takeIf { it > 0f } ?: 1f
+            if (kotlin.math.abs(draft.photoPlacement.aspectRatio - safeRatio) < 0.001f) return@update state
+            val nextPhoto = draft.photoPlacement.copy(aspectRatio = safeRatio)
+            val margins = customTemplateOuterMarginsFromPhoto(nextPhoto)
+            val logicalWidth = 1f + margins.left + margins.right
+            val logicalHeight = (1f + margins.top + margins.bottom) / safeRatio
+            state.copy(
+                customTemplateEditorState = editorState.copy(
+                    draft = draft.copy(
+                        photoPlacement = nextPhoto,
+                        frame = draft.frame.copy(
+                            logicalWidth = logicalWidth,
+                            logicalHeight = logicalHeight,
+                            aspectRatio = logicalWidth / logicalHeight,
+                        ),
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                ),
+            )
+        }
+    }
+
+    fun finishCustomTemplateInteraction() {
+        val before = customTemplateGestureStart ?: return
+        customTemplateGestureStart = null
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        if (editorState.draft == before) {
+            _uiState.update {
+                it.copy(customTemplateEditorState = editorState.copy(snapGuides = emptyList()))
+            }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                customTemplateEditorState = editorState.copy(
+                    snapGuides = emptyList(),
+                    undoStack = (editorState.undoStack + before).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun deleteSelectedCustomTemplateElement() {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val selectedId = editorState.selectedElementId ?: return
+        val updatedElements = editorState.draft.elements.filterNot { it.id == selectedId }
+        if (updatedElements.size == editorState.draft.elements.size) return
+        _uiState.update {
+            it.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = editorState.draft.copy(
+                        elements = updatedElements,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                    selectedElementId = null,
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = emptyList(),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun deleteSelectedCustomTemplateItem() {
+        val state = uiState.value
+        val editorState = state.customTemplateEditorState ?: return
+        val selectedCardId = editorState.selectedCardId
+        if (editorState.selectedTarget == CustomTemplateSelection.Card && selectedCardId != null) {
+            val updatedCards = editorState.draft.internalCards.filterNot { it.id == selectedCardId }
+            if (updatedCards.size == editorState.draft.internalCards.size) return
+            _uiState.update {
+                it.withValidatedCustomTemplateEditor(
+                    editorState.copy(
+                        draft = editorState.draft.copy(
+                            internalCards = updatedCards,
+                            elements = editorState.draft.elements.filterNot { element ->
+                                element.coordinateSpace == CanvasCoordinateSpace.InternalCard &&
+                                    element.containerId == selectedCardId
+                            },
+                            updatedAt = System.currentTimeMillis(),
+                        ),
+                        selectedTarget = CustomTemplateSelection.Photo,
+                        selectedElementId = null,
+                        selectedCardId = null,
+                        undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                        redoStack = emptyList(),
+                        isDirty = true,
+                    ),
+                )
+            }
+        } else {
+            deleteSelectedCustomTemplateElement()
+        }
+    }
+
+    fun undoCustomTemplateEdit() {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val previous = editorState.undoStack.lastOrNull() ?: return@update state
+            state.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = previous,
+                    selectedElementId = previous.elements.firstOrNull()?.id,
+                    selectedCardId = null,
+                    undoStack = editorState.undoStack.dropLast(1),
+                    redoStack = (editorState.redoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    isDirty = true,
+                ),
+            )
+        }
+    }
+
+    fun redoCustomTemplateEdit() {
+        _uiState.update { state ->
+            val editorState = state.customTemplateEditorState ?: return@update state
+            val next = editorState.redoStack.lastOrNull() ?: return@update state
+            state.withValidatedCustomTemplateEditor(
+                editorState.copy(
+                    draft = next,
+                    selectedElementId = next.elements.firstOrNull()?.id,
+                    selectedCardId = null,
+                    undoStack = (editorState.undoStack + editorState.draft).takeLast(CUSTOM_TEMPLATE_HISTORY_LIMIT),
+                    redoStack = editorState.redoStack.dropLast(1),
+                    isDirty = true,
+                ),
+            )
         }
     }
 
@@ -860,6 +1883,49 @@ class KeyxifViewModel(
         return presetRepository.searchKeycap(query, uiState.value.recentKeycaps)
     }
 
+    private fun KeyxifUiState.withValidatedCustomTemplateEditor(
+        editorState: CustomTemplateEditorState,
+    ): KeyxifUiState {
+        val buildInfo = selectedPhoto?.buildInfo ?: KeyboardBuildInfo()
+        val warnings = validateCardSpace(editorState.draft) { element ->
+            element.validationText(buildInfo)
+        }
+        val newBlocking = warnings.firstOrNull {
+            it.severity == CustomTemplateCardSpaceSeverity.Blocking &&
+                it.cardId !in editorState.cardSpaceWarningShownForCardIds
+        }
+        val nextEditorState = editorState.copy(
+            selectedTarget = if (newBlocking != null && editorState.selectedElementId == null) {
+                CustomTemplateSelection.Card
+            } else {
+                editorState.selectedTarget
+            },
+            selectedCardId = editorState.selectedCardId ?: newBlocking?.cardId,
+            cardSpaceWarnings = warnings,
+            cardSpaceWarningShownForCardIds = editorState.cardSpaceWarningShownForCardIds +
+                warnings.filter { it.severity == CustomTemplateCardSpaceSeverity.Blocking }.map { it.cardId },
+        )
+        return copy(
+            customTemplateEditorState = nextEditorState,
+            uiMessage = if (newBlocking != null) {
+                "공간이 부족합니다. 카드 크기를 늘리거나 요소를 줄여주세요."
+            } else {
+                uiMessage
+            },
+        )
+    }
+
+    private fun createEditorState(template: CustomTemplate): CustomTemplateEditorState {
+        return CustomTemplateEditorState(
+            draft = template,
+            selectedTarget = CustomTemplateSelection.Frame,
+            selectedElementId = null,
+            selectedCardId = null,
+            cardSpaceWarnings = validateCardSpace(template),
+            isDirty = false,
+        )
+    }
+
     suspend fun renderPreviewBitmap(
         photoId: String,
         maxLongSide: Int = BitmapUtils.PREVIEW_LONG_SIDE_LIMIT,
@@ -869,12 +1935,20 @@ class KeyxifViewModel(
         // 그리드에서 여러 셀이 한 번에 렌더링을 요청하면 대형 비트맵이 동시에 올라와
         // 메모리 부족으로 실패하기 쉬우므로 동시 렌더링 수를 제한한다.
         previewRenderSemaphore.withPermit {
+            val customTemplate = if (CUSTOM_TEMPLATE_RENDERING_ENABLED) {
+                state.selectedCustomTemplateId?.let { id ->
+                    state.customTemplates.firstOrNull { it.id == id }
+                }
+            } else {
+                null
+            }
             renderer.render(
                 context = getApplication(),
                 photo = photo,
                 template = state.selectedTemplate,
                 settings = state.settings,
                 maxLongSide = maxLongSide,
+                customTemplate = customTemplate,
             )
         }
     }
@@ -938,7 +2012,14 @@ class KeyxifViewModel(
             }
 
             val payloadFile = runCatching {
-                prepareExportPayload(photos, state.selectedTemplate, state.settings)
+                val customTemplate = if (CUSTOM_TEMPLATE_RENDERING_ENABLED) {
+                    state.selectedCustomTemplateId?.let { id ->
+                        state.customTemplates.firstOrNull { it.id == id }
+                    }
+                } else {
+                    null
+                }
+                prepareExportPayload(photos, state.selectedTemplate, state.settings, customTemplate)
             }.getOrElse { error ->
                 _uiState.update {
                     it.copy(
@@ -974,6 +2055,7 @@ class KeyxifViewModel(
         photos: List<PhotoItem>,
         template: CardTemplate,
         settings: AppSettings,
+        customTemplate: CustomTemplate?,
     ): File = withContext(Dispatchers.IO) {
         val workId = UUID.randomUUID().toString()
         val workDir = File(getApplication<Application>().cacheDir, "keyxif_export/$workId").apply {
@@ -1001,6 +2083,7 @@ class KeyxifViewModel(
             photos = cachedPhotos,
             template = template,
             settings = settings,
+            customTemplate = customTemplate,
         )
         File(workDir, "request.json").also { file ->
             file.writeText(ExportWorkPayloadCodec.encode(payload).toString(), Charsets.UTF_8)
@@ -1705,6 +2788,7 @@ class KeyxifViewModel(
         _uiState.update {
             it.copy(
                 buildPresets = buildPresetRepository.getAll(),
+                customTemplates = customTemplateRepository.getAll(),
                 recentHousing = recentStore.recentHousing(),
                 recentSwitches = recentStore.recentSwitches(),
                 recentKeycaps = recentStore.recentKeycaps(),
@@ -1716,6 +2800,21 @@ class KeyxifViewModel(
     private fun outputDirectoryLabel(settings: AppSettings): String {
         val directory = FileNameUtils.sanitize(settings.saveDirectoryName).ifBlank { "Keyxif" }
         return "Pictures/$directory"
+    }
+
+    private fun CanvasElement.validationText(buildInfo: KeyboardBuildInfo): String {
+        return when (val data = content) {
+            is ElementContent.StaticText -> data.text
+            is ElementContent.BuildField -> when (data.field) {
+                BuildInfoField.Board -> buildInfo.housing
+                BuildInfoField.Switch -> buildInfo.switchName
+                BuildInfoField.Plate -> buildInfo.plate
+                BuildInfoField.Mount -> buildInfo.mount
+                BuildInfoField.Nickname -> buildInfo.nickname
+            }
+            ElementContent.LogoImage -> ""
+            is ElementContent.ColorChip -> ""
+        }
     }
 
     private fun KeyxifUiState.toDraftSession(): DraftSession {
@@ -1800,5 +2899,6 @@ class KeyxifViewModel(
     private companion object {
         const val SUPPORT_EMAIL = "typenews902@gmail.com"
         const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+        const val CUSTOM_TEMPLATE_HISTORY_LIMIT = 40
     }
 }

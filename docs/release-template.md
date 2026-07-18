@@ -1,11 +1,10 @@
 ## Keyxif Release
 
 ### Changes
-- Check for updates once on every cold app launch so newly published versions are not missed.
-- Improve package-installer compatibility and remove a restricted install intent flag.
-- Resume APK installation automatically after the user grants unknown-source permission.
-- Track the current download job and keep the verified APK in app-private storage until installation.
-- Verify that release signing, package identity, presets, settings, and recent-search storage remain compatible across updates.
+- Hide the unfinished custom-template editor UI while keeping its implementation code for later work.
+- Add the latest keyboard vendor, studio, housing, logo, and font preset updates to Android and Web.
+- Keep the restored app icon separate from the Keyxif logo assets used inside templates.
+- Synchronize Android and Web version metadata for 1.1.0.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

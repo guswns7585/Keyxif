@@ -113,31 +113,32 @@ fun PhotoPickerScreen(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Button(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp),
-                onClick = {
-                    launchPhotoPicker()
-                },
+        if (state.photos.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("사진 추가")
-            }
-            OutlinedButton(
-                modifier = Modifier.height(48.dp),
-                enabled = state.photos.isNotEmpty(),
-                onClick = { showClearAllConfirm = true },
-            ) {
-                Icon(Icons.Outlined.Delete, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("전체 삭제")
+                Button(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    onClick = {
+                        launchPhotoPicker()
+                    },
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("사진 추가")
+                }
+                OutlinedButton(
+                    modifier = Modifier.height(48.dp),
+                    onClick = { showClearAllConfirm = true },
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("전체 삭제")
+                }
             }
         }
 

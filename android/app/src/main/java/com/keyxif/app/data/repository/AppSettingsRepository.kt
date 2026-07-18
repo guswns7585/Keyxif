@@ -19,6 +19,7 @@ import com.keyxif.app.domain.model.NicknameStyle
 import com.keyxif.app.domain.model.OutputFormat
 import com.keyxif.app.domain.model.PaletteAnalysisMode
 import com.keyxif.app.domain.model.QualityPreset
+import com.keyxif.app.domain.model.TemplateFont
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -75,6 +76,7 @@ class AppSettingsRepository(
             preferences[Keys.AUTO_SELECT_LOGO_CONTRAST_VARIANT] = next.autoSelectLogoContrastVariant
             preferences[Keys.LANGUAGE_MODE] = next.languageMode.name
             preferences[Keys.THEME_MODE] = next.themeMode.name
+            preferences[Keys.TEMPLATE_FONT] = next.templateFont.name
         }
     }
 
@@ -118,6 +120,7 @@ class AppSettingsRepository(
             autoSelectLogoContrastVariant = preferences[Keys.AUTO_SELECT_LOGO_CONTRAST_VARIANT] ?: true,
             languageMode = enumValueOrDefault(preferences[Keys.LANGUAGE_MODE], AppLanguageMode.System),
             themeMode = enumValueOrDefault(preferences[Keys.THEME_MODE], AppThemeMode.System),
+            templateFont = enumValueOrDefault(preferences[Keys.TEMPLATE_FONT], TemplateFont.System),
         ).normalized()
     }
 
@@ -181,6 +184,7 @@ class AppSettingsRepository(
         val AUTO_SELECT_LOGO_CONTRAST_VARIANT = booleanPreferencesKey("auto_select_logo_contrast_variant")
         val LANGUAGE_MODE = stringPreferencesKey("language_mode")
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val TEMPLATE_FONT = stringPreferencesKey("template_font")
     }
 
     private companion object {

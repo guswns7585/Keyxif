@@ -354,6 +354,14 @@ fun BuildInfoScreen(
 
         item(key = "plate", contentType = "section") {
             FormSection(title = "보강판") {
+                ClearableTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = info.plate,
+                    onValueChange = { onBuildInfoChange(info.copy(plate = it)) },
+                    label = { Text("보강판 직접 입력") },
+                    placeholder = { Text("목록에 없는 보강판을 입력하세요") },
+                    singleLine = true,
+                )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -373,6 +381,14 @@ fun BuildInfoScreen(
 
         item(key = "mount", contentType = "section") {
             FormSection(title = "마운트") {
+                ClearableTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = info.mount,
+                    onValueChange = { onBuildInfoChange(info.copy(mount = it)) },
+                    label = { Text("마운트 직접 입력") },
+                    placeholder = { Text("목록에 없는 마운트를 입력하세요") },
+                    singleLine = true,
+                )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),

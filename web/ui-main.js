@@ -5,6 +5,7 @@
 (function () {
   'use strict';
   window.KeyxifUI = window.KeyxifUI || {};
+  var CUSTOM_TEMPLATE_UI_ENABLED = window.KEYXIF_CUSTOM_TEMPLATE_UI_ENABLED === true;
 
   /* ---- Icons (Material style inline SVG) ---- */
   var ICONS = {
@@ -59,14 +60,15 @@
     var root = document.createElement('div');
     root.className = 'screen';
 
-    // 상단 버튼 행
-    var topRow = h('<div class="row gap8"></div>');
-    var addBtn = h('<button class="btn btn-filled grow">' + ICONS.add + '<span>사진 추가</span></button>');
-    addBtn.addEventListener('click', function () { pickPhotos(actions); });
-    var clearBtn = h('<button class="btn btn-outlined"' + (state.photos.length ? '' : ' disabled') + '>' + ICONS.del + '<span>전체 삭제</span></button>');
-    clearBtn.addEventListener('click', function () { ui.clearConfirmOpen = true; notify(); });
-    topRow.appendChild(addBtn); topRow.appendChild(clearBtn);
-    root.appendChild(topRow);
+    if (state.photos.length > 0) {
+      var topRow = h('<div class="row gap8"></div>');
+      var addBtn = h('<button class="btn btn-filled grow">' + ICONS.add + '<span>사진 추가</span></button>');
+      addBtn.addEventListener('click', function () { pickPhotos(actions); });
+      var clearBtn = h('<button class="btn btn-outlined">' + ICONS.del + '<span>전체 삭제</span></button>');
+      clearBtn.addEventListener('click', function () { ui.clearConfirmOpen = true; notify(); });
+      topRow.appendChild(addBtn); topRow.appendChild(clearBtn);
+      root.appendChild(topRow);
+    }
 
     // 공유 메시지 배너
     if (state.shareMessage) {
@@ -89,6 +91,11 @@
       var cta = h('<button class="btn btn-filled">' + ICONS.add + '<span>사진 선택하기</span></button>');
       cta.addEventListener('click', function () { pickPhotos(actions); });
       empty.appendChild(cta);
+      if (CUSTOM_TEMPLATE_UI_ENABLED) {
+        var templateCta = h('<button class="btn btn-tonal"><span>커스텀 템플릿 만들기</span></button>');
+        templateCta.addEventListener('click', actions.openCustomTemplateEditor);
+        empty.appendChild(templateCta);
+      }
       root.appendChild(empty);
     } else {
       var list = h('<div class="col gap10"></div>');
@@ -314,11 +321,15 @@
     root.appendChild(s3);
 
     // ---- 섹션 4/5: 보강판 / 마운트
-    root.appendChild(buildChipToggleSection('보강판', window.KeyxifSearch.plates, info.plate, function (v) {
+    root.appendChild(buildChipToggleSection('보강판', '보강판 직접 입력', '목록에 없는 보강판을 입력하세요', window.KeyxifSearch.plates, info.plate, function (v) {
       setInfoField(actions, info, 'plate', info.plate === v ? '' : v);
+    }, function (v) {
+      setInfoField(actions, info, 'plate', v);
     }));
-    root.appendChild(buildChipToggleSection('마운트', window.KeyxifSearch.mounts, info.mount, function (v) {
+    root.appendChild(buildChipToggleSection('마운트', '마운트 직접 입력', '목록에 없는 마운트를 입력하세요', window.KeyxifSearch.mounts, info.mount, function (v) {
       setInfoField(actions, info, 'mount', info.mount === v ? '' : v);
+    }, function (v) {
+      setInfoField(actions, info, 'mount', v);
     }));
 
     // ---- 섹션 6: 닉네임과 로고
@@ -463,8 +474,17 @@
     wrap.appendChild(row);
     parent.appendChild(wrap);
   }
-  function buildChipToggleSection(title, values, current, onToggle) {
+  function buildChipToggleSection(title, fieldLabel, placeholder, values, current, onToggle, onInput) {
     var sec = h('<div class="card form-section"><div class="title-medium" style="font-weight:700">' + title + '</div></div>');
+    var field = buildField({
+      label: fieldLabel,
+      placeholder: placeholder,
+      value: current,
+      dataKey: title === '보강판' ? 'plate' : 'mount',
+      imeSafe: true,
+      onInput: onInput,
+    });
+    sec.appendChild(field.wrap);
     var row = h('<div class="chip-row"></div>');
     values.forEach(function (v) {
       row.appendChild(makeChip(window.KeyxifStore.helpers.esc(v), current === v, function () { onToggle(v); }));
@@ -654,7 +674,7 @@
   var SKETCH_CHIP_Y = {
     ClassicFrame: 0.95, MinimalCaption: 0.96, BottomSpecBar: 0.91, PosterMargin: 0.94,
     DarkGlassStrip: 0.94, SideSpecRail: 0.22, TopNameplate: 0.10, MuseumMat: 0.93,
-    CompactTicket: 0.93, CleanSignature: 0.96,
+    CompactTicket: 0.93, CleanSignature: 0.96, SoftEditorial: 0.91,
   };
 
   function rr(ctx, x, y, w, hh, r) {
@@ -760,6 +780,33 @@
         ctx.fillStyle = '#222222';
         ctx.beginPath(); ctx.arc(0.87 * w, 0.91 * hgt, 0.03 * hgt, 0, 7); ctx.fill();
         break;
+      case 'EditorialCover':
+        var topFade = ctx.createLinearGradient(0, 0, 0, 0.35 * hgt);
+        topFade.addColorStop(0, 'rgba(0,0,0,0.46)');
+        topFade.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = topFade; ctx.fillRect(0, 0, w, 0.38 * hgt);
+        var bottomFade = ctx.createLinearGradient(0, 0.52 * hgt, 0, hgt);
+        bottomFade.addColorStop(0, 'rgba(0,0,0,0)');
+        bottomFade.addColorStop(1, 'rgba(0,0,0,0.55)');
+        ctx.fillStyle = bottomFade; ctx.fillRect(0, 0.52 * hgt, w, 0.48 * hgt);
+        ctx.fillStyle = '#fff'; ctx.fillRect(0.06 * w, 0.10 * hgt, 0.88 * w, 6);
+        ctx.fillRect(0.07 * w, 0.18 * hgt, 0.42 * w, 2.5);
+        ctx.fillRect(0.07 * w, 0.64 * hgt, 0.48 * w, 5);
+        ctx.fillRect(0.07 * w, 0.72 * hgt, 0.34 * w, 3);
+        ctx.fillRect(0.07 * w, 0.78 * hgt, 0.39 * w, 3);
+        ctx.beginPath(); ctx.arc(0.88 * w, 0.22 * hgt, 0.023 * hgt, 0, 7); ctx.fill();
+        ctx.fillRect(0.68 * w, 0.90 * hgt, 0.22 * w, 3);
+        break;
+      case 'SoftEditorial':
+        var softFade = ctx.createLinearGradient(0, 0.55 * hgt, 0, hgt);
+        softFade.addColorStop(0, 'rgba(0,0,0,0)');
+        softFade.addColorStop(1, 'rgba(0,0,0,0.48)');
+        ctx.fillStyle = softFade; ctx.fillRect(0, 0.55 * hgt, w, 0.45 * hgt);
+        ctx.fillStyle = '#fff'; rr(ctx, 0.76 * w, 0.08 * hgt, 0.15 * w, 0.07 * hgt, 5);
+        ctx.fillRect(0.08 * w, 0.74 * hgt, 0.46 * w, 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.fillRect(0.08 * w, 0.82 * hgt, 0.62 * w, 2.5);
+        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.fillRect(0.08 * w, 0.90 * hgt, 0.22 * w, 2.5);
+        break;
       case 'PlainExport':
         ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 2;
         ctx.beginPath();
@@ -794,6 +841,11 @@
   }
 
   function renderTemplate(container, state, actions, helpers) {
+    if (CUSTOM_TEMPLATE_UI_ENABLED &&
+      window.KeyxifCustomTemplateEditor &&
+      window.KeyxifCustomTemplateEditor.render(container, state, actions, helpers)) {
+      return;
+    }
     var esc = helpers.esc;
     var consts = window.KeyxifStore.consts;
     var root = document.createElement('div');
@@ -813,10 +865,53 @@
       '<div class="body-medium muted ellipsis-1">' + esc(subtitle) + '</div>' +
       '</div>'));
 
+    if (CUSTOM_TEMPLATE_UI_ENABLED) {
+      var createBtn = h('<button class="btn btn-filled full custom-template-create">커스텀 템플릿 만들기</button>');
+      createBtn.addEventListener('click', actions.openCustomTemplateEditor);
+      root.appendChild(createBtn);
+    }
+
+    if (CUSTOM_TEMPLATE_UI_ENABLED && (state.customTemplates || []).length) {
+      var customSection = h('<div class="custom-template-list"></div>');
+      customSection.appendChild(h('<div class="title-medium">내 커스텀 템플릿</div>'));
+      (state.customTemplates || []).forEach(function (template) {
+        var selectedCustom = state.selectedCustomTemplateId === template.id;
+        var item = h(
+          '<div class="custom-template-list-card' + (selectedCustom ? ' selected' : '') + '">' +
+          '<button class="custom-template-list-main">' +
+          '<div class="title-small ellipsis-1">' + esc(template.name || '새 커스텀 템플릿') + '</div>' +
+          '<div class="body-small muted">요소 ' + ((template.elements || []).length) + '개 · 카드 ' + ((template.internalCards || []).length) + '개 · ' + esc(helpers.fmtDate(template.updatedAt)) + '</div>' +
+          '</button>' +
+          '<div class="row gap4">' +
+          '<button class="chip custom-template-edit">편집</button>' +
+          '<button class="icon-btn custom-template-copy" aria-label="복제">⧉</button>' +
+          '<button class="icon-btn custom-template-delete" aria-label="삭제">×</button>' +
+          '</div>' +
+          '</div>'
+        );
+        item.querySelector('.custom-template-list-main').addEventListener('click', function () {
+          actions.selectCustomTemplate(template.id);
+        });
+        item.querySelector('.custom-template-edit').addEventListener('click', function () {
+          actions.editCustomTemplate(template.id);
+        });
+        item.querySelector('.custom-template-copy').addEventListener('click', function () {
+          actions.duplicateCustomTemplate(template.id);
+        });
+        item.querySelector('.custom-template-delete').addEventListener('click', function () {
+          if (window.confirm('`' + (template.name || '새 커스텀 템플릿') + '` 템플릿을 삭제할까요?')) {
+            actions.deleteCustomTemplate(template.id);
+          }
+        });
+        customSection.appendChild(item);
+      });
+      root.appendChild(customSection);
+    }
+
     var grid = h('<div class="grid-templates"></div>');
     // enum 순서: Models.kt 표기 순서 (ClassicFrame 먼저 보여주는 게 아니라 enum 순)
     consts.CARD_TEMPLATES.forEach(function (tid) {
-      var selTpl = state.selectedTemplate === tid;
+      var selTpl = (!CUSTOM_TEMPLATE_UI_ENABLED || !state.selectedCustomTemplateId) && state.selectedTemplate === tid;
       var card = h(
         '<button class="tpl-card' + (selTpl ? ' selected' : '') + '">' +
         '<div class="tpl-preview">' +
@@ -1200,11 +1295,15 @@
      ===================================================================== */
   function renderKeyOf(photo, state) {
     var s = state.settings;
-    return [state.selectedTemplate, JSON.stringify(photo.buildInfo),
+    var customTemplate = CUSTOM_TEMPLATE_UI_ENABLED && state.selectedCustomTemplateId
+      ? (state.customTemplates || []).find(function (item) { return item.id === state.selectedCustomTemplateId; }) || null
+      : null;
+    return [state.selectedTemplate, state.selectedCustomTemplateId || '', customTemplate ? customTemplate.updatedAt : '',
+      JSON.stringify(photo.buildInfo),
       JSON.stringify(photo.renderStyle || {}),
       JSON.stringify(photo.analysisResult.paletteColors), s.textScale, s.nicknameStyle,
       s.nicknameEmphasis, s.showPaletteColors, s.paletteColorCount, s.paletteAnalysisMode,
-      s.paletteCenterCropRatio, s.autoSelectLogoContrastVariant].join('|');
+      s.paletteCenterCropRatio, s.autoSelectLogoContrastVariant, s.templateFont].join('|');
   }
 
   function ensurePreviewRender(photo, state, actions, maxSide) {
@@ -1248,6 +1347,37 @@
 
   var longPressTimer = null;
 
+  function buildTemplateFontControl(state, actions, helpers) {
+    var esc = helpers.esc;
+    var consts = window.KeyxifStore.consts;
+    var names = consts.TEMPLATE_FONT_NAME || { System: '시스템 기본' };
+    var selected = state.settings.templateFont || 'System';
+    var row = h('<div class="card soft-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px"></div>');
+    row.appendChild(h(
+      '<div class="col gap2">' +
+      '<div class="label-large muted">템플릿 폰트</div>' +
+      '<div class="title-small">' + esc(names[selected] || selected) + '</div>' +
+      '</div>'
+    ));
+    var select = h('<select class="input" style="width:auto;min-width:168px"></select>');
+    Object.keys(names).forEach(function (key) {
+      var opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = names[key];
+      opt.selected = key === selected;
+      select.appendChild(opt);
+    });
+    select.disabled = state.exportProgress.isSaving;
+    select.addEventListener('change', function () {
+      actions.updateSettings(function (settings) {
+        settings.templateFont = select.value;
+        return settings;
+      });
+    });
+    row.appendChild(select);
+    return row;
+  }
+
   function renderExport(container, state, actions, helpers) {
     // 재렌더 시 진행 중이던 롱프레스 타이머 정리 — 이전 노드의 clear 리스너가
     // DOM 교체로 사라져 유령 선택(500ms 후 멋대로 선택 모드 진입)이 생기는 것 방지
@@ -1263,6 +1393,8 @@
       '<div class="title-large">미리보기</div>' +
       '<div class="body-medium muted">WEBP 품질 ' + s.webpQuality + '% · Pictures/' + esc(s.saveDirectoryName) + '</div>' +
       '</div>'));
+
+    root.appendChild(buildTemplateFontControl(state, actions, helpers));
 
     if (prog.message) root.appendChild(h('<div class="body-medium muted">' + esc(prog.message) + '</div>'));
     if (prog.total > 0) {

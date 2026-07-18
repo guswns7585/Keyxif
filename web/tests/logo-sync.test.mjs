@@ -4,7 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const context = { window: {} };
-for (const file of ['../data/assets.js', '../data/logo-assets.generated.js', '../data/presets.js']) {
+for (const file of ['../data/assets.js', '../data/logo-assets.generated.js', '../data/presets.js', '../search.js']) {
   vm.runInNewContext(readFileSync(new URL(file, import.meta.url), 'utf8'), context);
 }
 
@@ -23,4 +23,18 @@ test('every registered logo drawable resolves to a web asset', () => {
       if (key) assert.ok(assets[key], `${logo.id} references missing asset ${key}`);
     }
   }
+});
+
+test('new contrast logo sets are registered', () => {
+  for (const id of ['alps', 'cherry', 'kmg', 'otd']) {
+    const logo = context.window.KEYXIF_PRESETS.logos.find((item) => item.id === id);
+    assert.ok(logo, `${id} logo is missing`);
+    assert.equal(logo.whiteDrawable, `logo_${id}_w`);
+    assert.equal(logo.blackDrawable, `logo_${id}_b`);
+  }
+});
+
+test('typed housing text can resolve a new logo', () => {
+  const logo = context.window.KeyxifSearch.logoForBuildInfo({ housing: 'OTD 356CL' });
+  assert.equal(logo?.id, 'otd');
 });

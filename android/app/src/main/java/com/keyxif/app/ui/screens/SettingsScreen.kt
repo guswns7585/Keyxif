@@ -68,6 +68,8 @@ fun SettingsScreen(
     onInstallDownloadedUpdate: () -> Unit,
     onPruneMissingExportedImages: () -> Unit,
     onClearExportedImageRecords: () -> Unit,
+    onCreateBackup: () -> Unit,
+    onChooseBackupToRestore: () -> Unit,
     onOpenContactEmail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -131,6 +133,10 @@ fun SettingsScreen(
                             exportedImageCount = exportedImageCount,
                             onPruneMissingExportedImages = onPruneMissingExportedImages,
                             onClearExportedImageRecords = onClearExportedImageRecords,
+                        )
+                        SettingsPage.Backup -> BackupSettings(
+                            onCreateBackup = onCreateBackup,
+                            onChooseBackupToRestore = onChooseBackupToRestore,
                         )
                         SettingsPage.About -> AboutSettings()
                         SettingsPage.Developer -> DeveloperSettings(onOpenContactEmail)
@@ -561,6 +567,34 @@ private fun GallerySettings(
 }
 
 @Composable
+private fun BackupSettings(
+    onCreateBackup: () -> Unit,
+    onChooseBackupToRestore: () -> Unit,
+) {
+    Text(
+        text = "설정, 빌드 프리셋, 최근 검색 내역과 완성 이미지 파일을 하나의 백업 파일로 보관합니다.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Text(
+        text = "앱을 삭제하기 전에 백업 파일을 다운로드나 클라우드 폴더처럼 앱 외부 위치에 저장하세요. 복원 시 설정은 백업 값으로 바뀌고 목록과 이미지는 현재 데이터에 합쳐집니다.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Button(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onCreateBackup,
+    ) {
+        Text("백업 파일 만들기")
+    }
+    Button(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onChooseBackupToRestore,
+    ) {
+        Text("백업 파일 복원")
+    }
+}
+
+@Composable
 private fun AboutSettings() {
     Text(
         text = "Keyxif",
@@ -728,6 +762,7 @@ private enum class SettingsPage(
     Template("템플릿 설정", "기본 템플릿과 오버레이", "Templates", "Defaults and overlays"),
     Update("업데이트", "버전 확인과 설치", "Updates", "Version checks and install"),
     Gallery("완성 이미지 관리", "저장 목록 정리", "Finished Images", "Saved image list"),
+    Backup("백업 및 복원", "설정, 프리셋, 기록과 이미지 보관", "Backup & Restore", "Settings, presets, history, and images"),
     About("앱 정보", "버전과 개인정보 처리", "About", "Version and privacy"),
     Developer("개발 정보", "문의와 기술 정보", "Developer", "Contact and technical info"),
 }

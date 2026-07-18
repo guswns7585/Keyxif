@@ -12,6 +12,7 @@ const entries = [
   "search.js",
   "webp-encoder.js",
   "store.js",
+  "ui-template-editor.js",
   "ui-gallery.js",
   "ui-main.js",
   "ui-settings.js",

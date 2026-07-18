@@ -158,6 +158,16 @@
     // 2) 하우징 텍스트 → 하우징 프리셋 → 로고 체인
     var hp = matchHousingByText(buildInfo.housing);
     if (hp) return logoById(logoIdForHousing(hp));
+    var housing = normalize(buildInfo.housing);
+    if (!housing) return null;
+    var logos = P().logos;
+    for (var i = 0; i < logos.length; i++) {
+      if (housing.indexOf(normalize(logos[i].name)) >= 0) return logos[i];
+      var aliases = logos[i].aliases || [];
+      for (var j = 0; j < aliases.length; j++) {
+        if (housing.indexOf(normalize(aliases[j])) >= 0) return logos[i];
+      }
+    }
     return null;
   }
 

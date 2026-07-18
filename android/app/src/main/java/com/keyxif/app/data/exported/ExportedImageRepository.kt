@@ -44,6 +44,17 @@ class ExportedImageRepository(
         }
     }
 
+    suspend fun addAll(images: List<ExportedImage>) {
+        if (images.isEmpty()) return
+        context.keyxifExportedImagesDataStore.edit { preferences ->
+            val importedIds = images.mapTo(mutableSetOf()) { it.id }
+            val current = decode(preferences[Keys.EXPORTED_IMAGES_JSON].orEmpty())
+            val next = (images + current.filterNot { it.id in importedIds })
+                .sortedByDescending { it.createdAt }
+            preferences[Keys.EXPORTED_IMAGES_JSON] = encode(next).toString()
+        }
+    }
+
     suspend fun remove(id: String) {
         context.keyxifExportedImagesDataStore.edit { preferences ->
             val next = decode(preferences[Keys.EXPORTED_IMAGES_JSON].orEmpty()).filterNot { it.id == id }

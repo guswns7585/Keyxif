@@ -1,10 +1,13 @@
 package com.keyxif.app.domain.export
 
 import android.net.Uri
+import com.keyxif.app.data.repository.toCustomTemplate
+import com.keyxif.app.data.repository.toJson
 import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.AppLanguageMode
 import com.keyxif.app.domain.model.AppThemeMode
 import com.keyxif.app.domain.model.CardTemplate
+import com.keyxif.app.domain.model.CustomTemplate
 import com.keyxif.app.domain.model.FileNameRule
 import com.keyxif.app.domain.model.KeyboardBuildInfo
 import com.keyxif.app.domain.model.NicknameStyle
@@ -19,6 +22,7 @@ import com.keyxif.app.domain.model.PhotoAnalysisResult
 import com.keyxif.app.domain.model.PhotoItem
 import com.keyxif.app.domain.model.PhotoRenderStyle
 import com.keyxif.app.domain.model.QualityPreset
+import com.keyxif.app.domain.model.TemplateFont
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,11 +30,13 @@ data class ExportWorkPayload(
     val photos: List<PhotoItem>,
     val template: CardTemplate,
     val settings: AppSettings,
+    val customTemplate: CustomTemplate? = null,
 )
 
 object ExportWorkPayloadCodec {
     fun encode(payload: ExportWorkPayload): JSONObject = JSONObject().apply {
         put("template", payload.template.name)
+        put("customTemplate", payload.customTemplate?.toJson())
         put("settings", payload.settings.toJson())
         put(
             "photos",
@@ -51,6 +57,7 @@ object ExportWorkPayloadCodec {
             },
             template = enumValueOrDefault(json.optString("template"), CardTemplate.ClassicFrame),
             settings = json.optJSONObject("settings")?.toSettings() ?: AppSettings(),
+            customTemplate = json.optJSONObject("customTemplate")?.toCustomTemplate(),
         )
     }
 
@@ -245,6 +252,7 @@ object ExportWorkPayloadCodec {
         put("autoSelectLogoContrastVariant", autoSelectLogoContrastVariant)
         put("languageMode", languageMode.name)
         put("themeMode", themeMode.name)
+        put("templateFont", templateFont.name)
     }
 
     private fun JSONObject.toSettings(): AppSettings {
@@ -287,6 +295,7 @@ object ExportWorkPayloadCodec {
             autoSelectLogoContrastVariant = optBoolean("autoSelectLogoContrastVariant", true),
             languageMode = enumValueOrDefault(optString("languageMode"), AppLanguageMode.System),
             themeMode = enumValueOrDefault(optString("themeMode"), AppThemeMode.System),
+            templateFont = enumValueOrDefault(optString("templateFont"), TemplateFont.System),
         )
     }
 

@@ -169,6 +169,42 @@ fun TemplatePreviewCard(
                             drawRect(Color(0xFF2E2F2C), Offset(w * 0.08f, h * 0.97f), Size(w * 0.42f, 3f))
                             drawCircle(Color(0xFF222222), radius = h * 0.03f, center = Offset(w * 0.87f, h * 0.91f))
                         }
+                        CardTemplate.EditorialCover -> {
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(Color.Black.copy(alpha = 0.46f), Color.Transparent),
+                                    startY = 0f,
+                                    endY = h * 0.38f,
+                                ),
+                            )
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
+                                    startY = h * 0.52f,
+                                    endY = h,
+                                ),
+                            )
+                            drawRect(Color.White, Offset(w * 0.06f, h * 0.10f), Size(w * 0.88f, 6f))
+                            drawRect(Color.White, Offset(w * 0.07f, h * 0.18f), Size(w * 0.42f, 2.5f))
+                            drawRect(Color.White, Offset(w * 0.07f, h * 0.64f), Size(w * 0.48f, 5f))
+                            drawRect(Color.White, Offset(w * 0.07f, h * 0.72f), Size(w * 0.34f, 3f))
+                            drawRect(Color.White, Offset(w * 0.07f, h * 0.78f), Size(w * 0.39f, 3f))
+                            drawCircle(Color.White, radius = h * 0.023f, center = Offset(w * 0.88f, h * 0.22f))
+                            drawRect(Color.White, Offset(w * 0.68f, h * 0.9f), Size(w * 0.22f, 3f))
+                        }
+                        CardTemplate.SoftEditorial -> {
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.48f)),
+                                    startY = h * 0.55f,
+                                    endY = h,
+                                ),
+                            )
+                            drawRoundRect(Color.White, Offset(w * 0.76f, h * 0.08f), Size(w * 0.15f, h * 0.07f), CornerRadius(5f, 5f))
+                            drawRect(Color.White, Offset(w * 0.08f, h * 0.74f), Size(w * 0.46f, 4f))
+                            drawRect(Color.White.copy(alpha = 0.88f), Offset(w * 0.08f, h * 0.82f), Size(w * 0.62f, 2.5f))
+                            drawRect(Color.White.copy(alpha = 0.72f), Offset(w * 0.08f, h * 0.90f), Size(w * 0.22f, 2.5f))
+                        }
                         CardTemplate.PlainExport -> {
                             drawRect(
                                 brush = Brush.linearGradient(
@@ -238,6 +274,7 @@ private val palettePreviewTemplates = setOf(
     CardTemplate.MuseumMat,
     CardTemplate.CompactTicket,
     CardTemplate.CleanSignature,
+    CardTemplate.SoftEditorial,
 )
 
 private val previewPaletteColors = listOf(
@@ -264,7 +301,8 @@ private fun DrawScope.drawPreviewPaletteChips(
         CardTemplate.TopNameplate,
         CardTemplate.MuseumMat,
         CardTemplate.CompactTicket,
-        CardTemplate.CleanSignature -> w * 0.94f
+        CardTemplate.CleanSignature,
+        CardTemplate.SoftEditorial -> w * 0.94f
         CardTemplate.SideSpecRail -> w * 0.965f
         else -> return
     }
@@ -279,6 +317,7 @@ private fun DrawScope.drawPreviewPaletteChips(
         CardTemplate.MuseumMat -> h * 0.93f
         CardTemplate.CompactTicket -> h * 0.93f
         CardTemplate.CleanSignature -> h * 0.96f
+        CardTemplate.SoftEditorial -> h * 0.91f
         else -> return
     }
     var left = right - totalWidth

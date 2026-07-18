@@ -29,6 +29,7 @@ import com.keyxif.app.domain.model.PhotoAnalysisResult
 import com.keyxif.app.domain.model.PhotoItem
 import com.keyxif.app.domain.model.PhotoRenderStyle
 import com.keyxif.app.domain.model.QualityPreset
+import com.keyxif.app.domain.model.TemplateFont
 import com.keyxif.app.domain.model.RenderStatus
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -310,6 +311,7 @@ class DraftSessionRepository(
         put("autoSelectLogoContrastVariant", autoSelectLogoContrastVariant)
         put("languageMode", languageMode.name)
         put("themeMode", themeMode.name)
+        put("templateFont", templateFont.name)
     }
 
     private fun JSONObject.toSettings(): AppSettings {
@@ -352,6 +354,7 @@ class DraftSessionRepository(
             autoSelectLogoContrastVariant = optBoolean("autoSelectLogoContrastVariant", true),
             languageMode = enumValueOrDefault(optString("languageMode"), AppLanguageMode.System),
             themeMode = enumValueOrDefault(optString("themeMode"), AppThemeMode.System),
+            templateFont = enumValueOrDefault(optString("templateFont"), TemplateFont.System),
         )
     }
 

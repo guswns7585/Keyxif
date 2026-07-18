@@ -1,10 +1,12 @@
-/* =============================================================================
+﻿/* =============================================================================
    KeyxifStore — KeyxifViewModel.kt 1:1 웹 포트
    state-flow-spec.md 기준. 의존: KeyxifDB, KeyxifSearch, KeyxifPalette,
    KeyxifRenderer, KEYXIF_ASSETS
    ============================================================================= */
 (function () {
   'use strict';
+
+  window.KEYXIF_CUSTOM_TEMPLATE_UI_ENABLED = false;
 
   var U = function () { return window.KeyxifRenderer.utils; };
 
@@ -15,13 +17,14 @@
   var CARD_TEMPLATES = [
     'PlainExport', 'ClassicFrame', 'MinimalCaption', 'BottomSpecBar', 'CornerMark',
     'PosterMargin', 'DarkGlassStrip', 'SideSpecRail', 'TopNameplate', 'MuseumMat',
-    'CompactTicket', 'CleanSignature',
+    'CompactTicket', 'CleanSignature', 'EditorialCover', 'SoftEditorial',
   ];
   var TEMPLATE_NAME = {
     ClassicFrame: '클래식 프레임', MinimalCaption: '미니멀 캡션', BottomSpecBar: '하단 스펙 바',
     CornerMark: '코너 마크', PosterMargin: '포스터 마진', DarkGlassStrip: '다크 글래스 스트립',
     SideSpecRail: '사이드 스펙 레일', TopNameplate: '상단 네임플레이트', MuseumMat: '뮤지엄 매트',
-    CompactTicket: '컴팩트 티켓', CleanSignature: '클린 시그니처', PlainExport: 'Plain Export',
+    CompactTicket: '컴팩트 티켓', CleanSignature: '클린 시그니처',
+    EditorialCover: '에디토리얼 커버', SoftEditorial: '소프트 에디토리얼', PlainExport: 'Plain Export',
   };
   var TEMPLATE_DESC = {
     ClassicFrame: '사진 밖의 얇은 바에 전체 빌드 정보를 정돈합니다.',
@@ -35,6 +38,8 @@
     MuseumMat: '넓은 매트 여백과 작품 라벨 같은 정보를 만듭니다.',
     CompactTicket: '하단 티켓형 라벨에 주요 정보를 작게 모읍니다.',
     CleanSignature: '하단 여백에 하우징, 키캡, 닉네임을 서명처럼 정리합니다.',
+    EditorialCover: '잡지 표지처럼 큰 마스트헤드와 커버라인을 사진 위에 얹습니다.',
+    SoftEditorial: '사진을 조용히 살리는 얌전한 에디토리얼 오버레이입니다.',
     PlainExport: '꾸밈 없이 원본 사진을 WEBP로 저장합니다.',
   };
   var STEPS = ['Photos', 'BuildInfo', 'Palette', 'Template', 'Export'];
@@ -54,9 +59,26 @@
     NICKNAME_INDEX: 'Nickname_번호', HOUSING_KEYCAP_INDEX: 'Housing_Keycap_번호',
   };
 
+  var TEMPLATE_FONT_NAME = {
+    System: '시스템 기본',
+    IbmPlexSansKr: 'IBM Plex Sans KR',
+    NotoSansKr: 'Noto Sans KR',
+    NotoSerifKr: 'Noto Serif KR',
+    NanumGothic: 'Nanum Gothic',
+    GowunBatang: '고운바탕',
+    BlackHanSans: 'Black Han Sans',
+    NanumPenScript: 'Nanum Pen Script',
+    Gugi: '구기',
+  };
+  var CUSTOM_TEMPLATE_TABS = ['Frame', 'Element', 'Card'];
+  var CUSTOM_TEMPLATE_TAB_NAME = { Frame: '프레임', Element: '요소', Card: '카드' };
+  var CUSTOM_TEMPLATE_CARD_STYLE_PRESETS = ['Light', 'Dark', 'Glass'];
+  var CUSTOM_TEMPLATE_CARD_STYLE_NAME = { Light: '밝은 카드', Dark: '어두운 카드', Glass: '글래스' };
+  var MIN_READABLE_CUSTOM_TEMPLATE_TEXT_SIZE = 0.026;
+
   var SAVE_LONG_SIDE_LIMIT = 4096;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.0.7-web';
+  var VERSION = '1.1.0-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */
@@ -79,6 +101,7 @@
       paletteAnalysisMode: 'AutoCenter', paletteCenterCropRatio: 0.75,
       autoSelectLogoContrastVariant: true,
       languageMode: 'System', themeMode: 'System',
+      templateFont: 'System',
     };
   }
 
@@ -87,6 +110,28 @@
   function normalizeCustomColor(value) {
     var match = String(value == null ? '' : value).trim().match(/^#?([0-9a-f]{6})$/i);
     return match ? '#' + match[1].toUpperCase() : null;
+  }
+
+  function templateFontFamily(font) {
+    switch (font || 'System') {
+      case 'IbmPlexSansKr': return 'Keyxif IBM Plex Sans KR';
+      case 'NotoSansKr': return 'Keyxif Noto Sans KR';
+      case 'NotoSerifKr': return 'Keyxif Noto Serif KR';
+      case 'NanumGothic': return 'Keyxif Nanum Gothic';
+      case 'GowunBatang': return 'Keyxif Gowun Batang';
+      case 'BlackHanSans': return 'Keyxif Black Han Sans';
+      case 'NanumPenScript': return 'Keyxif Nanum Pen Script';
+      case 'Gugi': return 'Keyxif Gugi';
+      default: return null;
+    }
+  }
+
+  function ensureTemplateFontReady(settings) {
+    var family = templateFontFamily(settings && settings.templateFont);
+    if (!family || !document.fonts || !document.fonts.load) return Promise.resolve();
+    return document.fonts.load('400 32px "' + family + '"').then(function () {
+      return document.fonts.load('700 32px "' + family + '"');
+    }).catch(function () {});
   }
 
   function normalizeSettings(raw) {
@@ -112,6 +157,7 @@
     s.paletteCenterCropRatio = clamp(Number(s.paletteCenterCropRatio) || 0.75, 0.35, 1.0);
     s.languageMode = enumOr(s.languageMode, ['System', 'Korean', 'English'], 'System');
     s.themeMode = enumOr(s.themeMode, ['System', 'Light', 'Dark'], 'System');
+    s.templateFont = enumOr(s.templateFont, Object.keys(TEMPLATE_FONT_NAME), 'System');
     ['openGalleryAfterSave', 'showSaveToast', 'skipFailedOnBatchSave', 'rememberLastTemplate',
       'rememberLastNickname', 'copyPreviousBuildInfoOnAdd', 'useCurrentPhotoForTemplatePreview',
       'protectCenterAreaForOverlay', 'autoRestoreDraftSession', 'askBeforeRestoreDraft',
@@ -155,6 +201,440 @@
       customTextColor: null,
     };
   }
+  function clampBounds(bounds) {
+    var width = Math.min(Math.max(bounds.width, 0.01), 1);
+    var height = Math.min(Math.max(bounds.height, 0.01), 1);
+    return {
+      x: Math.min(Math.max(bounds.x, 0), 1 - width),
+      y: Math.min(Math.max(bounds.y, 0), 1 - height),
+      width: width,
+      height: height,
+    };
+  }
+  function containPhotoBounds(bounds) {
+    return clampBounds(bounds);
+  }
+  function centeredContainPhotoBounds(frameAspectRatio, photoAspectRatio, padding) {
+    var p = Math.min(Math.max(Number(padding) || 0.08, 0), 0.35);
+    return containPhotoBounds(
+      { x: p, y: p, width: 1 - p * 2, height: 1 - p * 2 },
+      photoAspectRatio,
+      frameAspectRatio
+    );
+  }
+  function customTemplateMarginsFromPhoto(photo) {
+    var width = clamp(Number(photo && photo.width) || 1, 0.01, 1);
+    var height = clamp(Number(photo && photo.height) || 1, 0.01, 1);
+    var x = clamp(Number(photo && photo.x) || 0, 0, 1 - width);
+    var y = clamp(Number(photo && photo.y) || 0, 0, 1 - height);
+    return {
+      left: clamp(x / width, 0, 3),
+      right: clamp((1 - x - width) / width, 0, 3),
+      top: clamp(y / height, 0, 3),
+      bottom: clamp((1 - y - height) / height, 0, 3),
+    };
+  }
+  function photoBoundsFromCustomTemplateMargins(margins) {
+    var left = clamp(Number(margins && margins.left) || 0, 0, 3);
+    var right = clamp(Number(margins && margins.right) || 0, 0, 3);
+    var top = clamp(Number(margins && margins.top) || 0, 0, 3);
+    var bottom = clamp(Number(margins && margins.bottom) || 0, 0, 3);
+    var totalWidth = 1 + left + right;
+    var totalHeight = 1 + top + bottom;
+    return {
+      x: left / totalWidth,
+      y: top / totalHeight,
+      width: 1 / totalWidth,
+      height: 1 / totalHeight,
+    };
+  }
+  function customTemplateFrameFromMargins(photo, margins) {
+    var left = clamp(Number(margins && margins.left) || 0, 0, 3);
+    var right = clamp(Number(margins && margins.right) || 0, 0, 3);
+    var top = clamp(Number(margins && margins.top) || 0, 0, 3);
+    var bottom = clamp(Number(margins && margins.bottom) || 0, 0, 3);
+    var photoAspect = Math.max(Number(photo && photo.aspectRatio) || 1, 0.05);
+    var logicalWidth = 1 + left + right;
+    var logicalHeight = (1 + top + bottom) / photoAspect;
+    return {
+      logicalWidth: logicalWidth,
+      logicalHeight: logicalHeight,
+      aspectRatio: logicalWidth / logicalHeight,
+    };
+  }
+  function createBlankCustomTemplate() {
+    var now = Date.now();
+    var width = 1;
+    var height = 1.25;
+    return {
+      id: uuid(),
+      templateVersion: 1,
+      name: '새 커스텀 템플릿',
+      createdAt: now,
+      updatedAt: now,
+      frame: {
+        logicalWidth: width,
+        logicalHeight: height,
+        aspectRatio: width / height,
+        fill: { type: 'solid', color: '#F7F5F0', colorSlotId: null },
+      },
+      photoPlacement: {
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        height: 0.68,
+        scale: 1,
+        aspectRatio: 1,
+        fitMode: 'contain',
+        visualGap: 0,
+        safePadding: 0.035,
+      },
+      elements: [],
+      internalCards: [],
+      thumbnail: null,
+    };
+  }
+  function createStage2TestCanvasElement() {
+    return {
+      id: 'test-rect',
+      type: 'colorChip',
+      containerId: 'frame',
+      coordinateSpace: 'frame',
+      x: 0.1,
+      y: 0.8,
+      width: 0.28,
+      height: 0.1,
+      rotation: 0,
+      zIndex: 0,
+      locked: false,
+      hidden: false,
+      style: { textColor: '#111111', fontSize: 0.045, fontWeight: 'regular', textAlign: 'start', opacity: 0.95, cornerRadius: 0.018 },
+      content: { type: 'colorChip', color: '#B7C9BF', colorSlotId: null },
+    };
+  }
+  function elementContainerId(space) {
+    if (space === 'photo') return 'photo';
+    if (space === 'internalCard') return 'internal-card';
+    return 'frame';
+  }
+  function nextCustomTemplateSpace(editor) {
+    if (editor && editor.selectedTarget === 'Card' && editor.selectedCardId) return 'internalCard';
+    return editor && editor.selectedTarget === 'Photo' ? 'photo' : 'frame';
+  }
+  function nextCustomTemplateZ(editor) {
+    return ((editor.draft.elements || []).reduce(function (max, element) {
+      return Math.max(max, Number(element.zIndex) || 0);
+    }, 0)) + 1;
+  }
+  function nextCustomTemplateCardZ(editor) {
+    return ((editor.draft.internalCards || []).reduce(function (max, card) {
+      return Math.max(max, Number(card.zIndex) || 0);
+    }, 0)) + 1;
+  }
+  function createCustomTemplateTextElement(field, space, zIndex) {
+    return {
+      id: uuid(),
+      type: 'text',
+      containerId: elementContainerId(space),
+      coordinateSpace: space,
+      x: 0.1,
+      y: space === 'photo' ? 0.72 : (space === 'internalCard' ? 0.12 : 0.82),
+      width: space === 'internalCard' ? 0.76 : 0.48,
+      height: 0.09,
+      rotation: 0,
+      zIndex: zIndex,
+      locked: false,
+      hidden: false,
+      style: {
+        textColor: (space === 'photo' || space === 'internalCard') ? '#FFFFFF' : '#111111',
+        fontSize: 0.052,
+        fontWeight: 'bold',
+        textAlign: 'start',
+        lineHeight: 1.12,
+        letterSpacing: 0,
+        maxLines: 2,
+        uppercase: false,
+        opacity: 1,
+        cornerRadius: 0,
+        chipShape: 'rounded',
+      },
+      content: { type: 'buildField', field: field || 'Board', format: 'valueOnly' },
+    };
+  }
+  function createCustomTemplateLogoElement(space, zIndex) {
+    return {
+      id: uuid(),
+      type: 'logo',
+      containerId: elementContainerId(space),
+      coordinateSpace: space,
+      x: space === 'photo' ? 0.72 : (space === 'internalCard' ? 0.1 : 0.68),
+      y: space === 'photo' ? 0.08 : (space === 'internalCard' ? 0.55 : 0.82),
+      width: space === 'internalCard' ? 0.34 : 0.18,
+      height: space === 'internalCard' ? 0.28 : 0.12,
+      rotation: 0,
+      zIndex: zIndex,
+      locked: false,
+      hidden: false,
+      style: { textColor: '#111111', fontSize: 0.045, fontWeight: 'regular', textAlign: 'center', lineHeight: 1.12, letterSpacing: 0, maxLines: 1, uppercase: false, opacity: 1, cornerRadius: 0, chipShape: 'rounded' },
+      content: { type: 'logoImage' },
+    };
+  }
+  function createCustomTemplateColorChipElement(space, zIndex) {
+    return {
+      id: uuid(),
+      type: 'colorChip',
+      containerId: elementContainerId(space),
+      coordinateSpace: space,
+      x: space === 'photo' ? 0.1 : (space === 'internalCard' ? 0.1 : 0.72),
+      y: space === 'photo' ? 0.08 : (space === 'internalCard' ? 0.55 : 0.82),
+      width: 0.12,
+      height: 0.12,
+      rotation: 0,
+      zIndex: zIndex,
+      locked: false,
+      hidden: false,
+      style: { textColor: '#111111', fontSize: 0.045, fontWeight: 'regular', textAlign: 'start', lineHeight: 1.12, letterSpacing: 0, maxLines: 1, uppercase: false, opacity: 1, cornerRadius: 0.02, chipShape: 'rounded' },
+      content: { type: 'colorChip', color: '#B7C9BF', colorSlotId: null },
+    };
+  }
+  function cardStylePreset(preset) {
+    if (preset === 'Dark') {
+      return { backgroundColor: '#151716', colorSlotId: null, opacity: 0.78, radius: 0.04, borderEnabled: true, borderColor: '#FFFFFF', borderWidth: 0.0015, padding: 0.06, shadowEnabled: true, shadowBlur: 0.03, shadowOpacity: 0.28 };
+    }
+    if (preset === 'Glass') {
+      return { backgroundColor: '#F7F5F0', colorSlotId: null, opacity: 0.58, radius: 0.05, borderEnabled: true, borderColor: '#FFFFFF', borderWidth: 0.002, padding: 0.065, shadowEnabled: true, shadowBlur: 0.035, shadowOpacity: 0.22 };
+    }
+    return { backgroundColor: '#FFFFFF', colorSlotId: null, opacity: 0.9, radius: 0.04, borderEnabled: true, borderColor: '#FFFFFF', borderWidth: 0.002, padding: 0.06, shadowEnabled: true, shadowBlur: 0.025, shadowOpacity: 0.18 };
+  }
+  function createCustomTemplateInternalCard(zIndex, preset) {
+    return {
+      id: uuid(),
+      containerId: 'photo',
+      x: 0.14,
+      y: 0.14,
+      width: 0.48,
+      height: 0.28,
+      zIndex: zIndex,
+      locked: false,
+      hidden: false,
+      style: cardStylePreset(preset || 'Light'),
+    };
+  }
+  function rectsIntersect(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+  function snapBounds(bounds, coordinateSpace, containerId, siblings, safePadding, threshold) {
+    var safe = clamp(Number(safePadding) || 0, 0, 0.24);
+    var width = clamp(bounds.width, 0.01, Math.max(0.01, 1 - safe * 2));
+    var height = clamp(bounds.height, 0.01, Math.max(0.01, 1 - safe * 2));
+    var next = {
+      x: clamp(bounds.x, safe, Math.max(safe, 1 - safe - width)),
+      y: clamp(bounds.y, safe, Math.max(safe, 1 - safe - height)),
+      width: width,
+      height: height,
+    };
+    var guides = [];
+    var hTargets = [safe, 0.5, 1 - safe];
+    var vTargets = [safe, 0.5, 1 - safe];
+    (siblings || []).forEach(function (s) {
+      hTargets.push(s.x, s.x + s.width / 2, s.x + s.width);
+      vTargets.push(s.y, s.y + s.height / 2, s.y + s.height);
+    });
+    function best(candidates, targets) {
+      var limit = Number(threshold) || 0.015;
+      var found = null;
+      candidates.forEach(function (candidate) {
+        targets.forEach(function (target) {
+          var offset = target - candidate;
+          if (Math.abs(offset) <= limit && (!found || Math.abs(offset) < Math.abs(found.offset))) {
+            found = { offset: offset, target: target };
+          }
+        });
+      });
+      return found;
+    }
+    var xs = best([next.x, next.x + next.width / 2, next.x + next.width], hTargets);
+    if (xs) {
+      next.x = clamp(next.x + xs.offset, safe, Math.max(safe, 1 - safe - next.width));
+      guides.push({ orientation: 'Vertical', coordinateSpace: coordinateSpace, containerId: containerId, position: clamp(xs.target, 0, 1) });
+    }
+    var ys = best([next.y, next.y + next.height / 2, next.y + next.height], vTargets);
+    if (ys) {
+      next.y = clamp(next.y + ys.offset, safe, Math.max(safe, 1 - safe - next.height));
+      guides.push({ orientation: 'Horizontal', coordinateSpace: coordinateSpace, containerId: containerId, position: clamp(ys.target, 0, 1) });
+    }
+    return { bounds: next, guides: guides };
+  }
+  function frameElementsCollidingWithPhoto(draft) {
+    var photo = draft.photoPlacement || {};
+    var safe = clamp(Number(photo.safePadding) || 0.035, 0, 0.2);
+    var protectedLeft = Math.max((photo.x || 0) - safe, 0);
+    var protectedTop = Math.max((photo.y || 0) - safe, 0);
+    var protectedRight = Math.min((photo.x || 0) + (photo.width || 0) + safe, 1);
+    var protectedBottom = Math.min((photo.y || 0) + (photo.height || 0) + safe, 1);
+    var protectedArea = {
+      x: protectedLeft,
+      y: protectedTop,
+      width: protectedRight - protectedLeft,
+      height: protectedBottom - protectedTop,
+    };
+    return (draft.elements || []).filter(function (element) {
+      return !element.hidden && element.coordinateSpace === 'frame' && rectsIntersect(element, protectedArea);
+    });
+  }
+  function customTemplateValidationText(element, buildInfo) {
+    var content = element && element.content ? element.content : {};
+    if (content.type === 'buildField') {
+      if (content.field === 'Board') return (buildInfo && buildInfo.housing) || 'BOARD';
+      if (content.field === 'Switch') return (buildInfo && buildInfo.switchName) || 'SWITCH';
+      if (content.field === 'Plate') return (buildInfo && buildInfo.plate) || 'PLATE';
+      if (content.field === 'Mount') return (buildInfo && buildInfo.mount) || 'MOUNT';
+      if (content.field === 'Nickname') return (buildInfo && buildInfo.nickname) || 'NICKNAME';
+    }
+    return String(content.text || '');
+  }
+  function customTemplateTextLikelyOverflowing(element, text) {
+    var style = element.style || {};
+    var fontSize = Math.max(Number(style.fontSize) || 0.045, 0.001);
+    var lineHeight = Math.max(Number(style.lineHeight) || 1.12, 0.8);
+    var maxLines = Math.max(Math.round(Number(style.maxLines) || 1), 1);
+    var normalizedText = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!normalizedText) return false;
+    var charCapacity = Math.max(1, Math.floor((element.width || 0) / Math.max(fontSize * 0.56, 0.006)));
+    var estimatedLines = Math.ceil(normalizedText.length / charCapacity);
+    var neededHeight = Math.min(estimatedLines, maxLines) * fontSize * lineHeight;
+    return estimatedLines > maxLines || neededHeight > (element.height || 0);
+  }
+  function validateCustomTemplateCardSpace(draft, buildInfo) {
+    var warnings = [];
+    var cards = (draft && draft.internalCards) || [];
+    var elements = (draft && draft.elements) || [];
+    cards.forEach(function (card) {
+      if (!card || card.hidden) return;
+      var padding = clamp(Number(card.style && card.style.padding) || 0, 0, 0.3);
+      var contentScale = 1 - padding * 2;
+      var cardElements = elements
+        .filter(function (element) {
+          return element &&
+            !element.hidden &&
+            element.coordinateSpace === 'internalCard' &&
+            element.containerId === card.id;
+        })
+        .sort(function (a, b) { return (a.zIndex || 0) - (b.zIndex || 0); });
+      var messages = [];
+      var blocking = false;
+      if (contentScale <= 0.08) {
+        messages.push('카드 패딩 때문에 내부 공간이 거의 없습니다.');
+        blocking = true;
+      }
+      cardElements.forEach(function (element) {
+        if (element.x < 0 || element.y < 0 || element.x + element.width > 1 || element.y + element.height > 1) {
+          messages.push('요소가 카드 내부 영역을 벗어났습니다.');
+          blocking = true;
+        }
+        if (element.type === 'text') {
+          if (((element.style && Number(element.style.fontSize)) || 0.045) < MIN_READABLE_CUSTOM_TEMPLATE_TEXT_SIZE) {
+            messages.push('텍스트가 읽기 어려울 만큼 작습니다.');
+            blocking = true;
+          }
+          if (customTemplateTextLikelyOverflowing(element, customTemplateValidationText(element, buildInfo))) {
+            messages.push('텍스트가 카드 안에서 잘릴 수 있습니다.');
+            blocking = true;
+          }
+        } else if (element.type === 'logo') {
+          if (element.width * contentScale < 0.1 || element.height * contentScale < 0.08) {
+            messages.push('로고 영역이 너무 작습니다.');
+          }
+        } else if (element.type === 'colorChip') {
+          if (element.width * contentScale < 0.055 || element.height * contentScale < 0.04) {
+            messages.push('색상칩 영역이 너무 작습니다.');
+          }
+        }
+      });
+      for (var i = 0; i < cardElements.length; i++) {
+        for (var j = i + 1; j < cardElements.length; j++) {
+          if (rectsIntersect(cardElements[i], cardElements[j])) {
+            messages.push('카드 안의 요소끼리 겹칩니다.');
+            i = cardElements.length;
+            break;
+          }
+        }
+      }
+      if (messages.length > 0) {
+        warnings.push({
+          cardId: card.id,
+          severity: blocking ? 'Blocking' : 'Warning',
+          messages: messages.filter(function (msg, index, arr) { return arr.indexOf(msg) === index; }),
+        });
+      }
+    });
+    return warnings;
+  }
+  function updateCustomTemplateCardSpaceWarnings(editor) {
+    if (!editor) return;
+    var photo = selectedPhoto();
+    var warnings = validateCustomTemplateCardSpace(editor.draft, photo && photo.buildInfo ? photo.buildInfo : defaultBuildInfo());
+    var shown = editor.cardSpaceWarningShownForCardIds || [];
+    var newBlocking = warnings.find(function (warning) {
+      return warning.severity === 'Blocking' && shown.indexOf(warning.cardId) < 0;
+    });
+    warnings.forEach(function (warning) {
+      if (warning.severity === 'Blocking' && shown.indexOf(warning.cardId) < 0) shown.push(warning.cardId);
+    });
+    editor.cardSpaceWarnings = warnings;
+    editor.cardSpaceWarningShownForCardIds = shown;
+    if (newBlocking) {
+      if (!editor.selectedElementId) {
+        editor.selectedTarget = 'Card';
+        editor.selectedCardId = editor.selectedCardId || newBlocking.cardId;
+      }
+      state.uiMessage = '공간이 부족합니다. 카드 크기를 늘리거나 요소를 줄여주세요.';
+    }
+  }
+  function avoidPhotoSafeArea(bounds, photo) {
+    var safe = Math.min(Math.max(photo.safePadding || 0.035, 0), 0.2);
+    var protectedLeft = Math.max((photo.x || 0) - safe, 0);
+    var protectedTop = Math.max((photo.y || 0) - safe, 0);
+    var protectedRight = Math.min((photo.x || 0) + (photo.width || 0) + safe, 1);
+    var protectedBottom = Math.min((photo.y || 0) + (photo.height || 0) + safe, 1);
+    var protectedArea = {
+      x: protectedLeft,
+      y: protectedTop,
+      width: protectedRight - protectedLeft,
+      height: protectedBottom - protectedTop,
+    };
+    var clamped = clampBounds(bounds);
+    if (!rectsIntersect(clamped, protectedArea)) return clamped;
+    var candidates = [
+      Object.assign({}, clamped, { y: Math.max(protectedArea.y - clamped.height, 0) }),
+      Object.assign({}, clamped, { y: Math.min(protectedArea.y + protectedArea.height, 1 - clamped.height) }),
+      Object.assign({}, clamped, { x: Math.max(protectedArea.x - clamped.width, 0) }),
+      Object.assign({}, clamped, { x: Math.min(protectedArea.x + protectedArea.width, 1 - clamped.width) }),
+    ].map(clampBounds).filter(function (candidate) { return !rectsIntersect(candidate, protectedArea); });
+    candidates.sort(function (a, b) {
+      var da = Math.pow(a.x - clamped.x, 2) + Math.pow(a.y - clamped.y, 2);
+      var db = Math.pow(b.x - clamped.x, 2) + Math.pow(b.y - clamped.y, 2);
+      return da - db;
+    });
+    return candidates[0] || clamped;
+  }
+  function createCustomTemplateEditorState(template) {
+    var draft = normalizeCustomTemplate(template || createBlankCustomTemplate());
+    return {
+      draft: draft,
+      activeTab: 'Frame',
+      selectedTarget: 'Frame',
+      selectedElementId: null,
+      selectedCardId: null,
+      snapGuides: [],
+      collisionWarning: null,
+      cardSpaceWarnings: [],
+      cardSpaceWarningShownForCardIds: [],
+      undoStack: [],
+      redoStack: [],
+      isDirty: false,
+    };
+  }
   function defaultExportProgress() {
     return { isSaving: false, current: 0, total: 0, successCount: 0, failureCount: 0, message: null };
   }
@@ -178,6 +658,9 @@
     selectedExportPhotoIds: {},        // Set 대용: { id: true }
     expandedExportPhotoId: null,
     selectedTemplate: 'ClassicFrame',
+    selectedCustomTemplateId: null,
+    customTemplates: [],
+    customTemplateEditorState: null,
     settings: defaultSettings(),
     isSettingsOpen: false,
     settingsPageName: null,
@@ -200,6 +683,7 @@
   var paletteJobRunning = false;
   var paletteJobGeneration = 0;
   var draftTimer = null;
+  var customTemplateInteractionStart = null;
 
   function emit() {
     for (var i = 0; i < listeners.length; i++) { try { listeners[i](state); } catch (e) { console.error(e); } }
@@ -388,6 +872,158 @@
   }
   function saveBuildPresets() { window.KeyxifDB.saveJSON('keyxif.buildPresets', state.buildPresets); }
 
+  function normalizeCustomTemplate(template) {
+    var fallback = createBlankCustomTemplate();
+    var source = template && typeof template === 'object' ? template : {};
+    return Object.assign({}, fallback, source, {
+      id: String(source.id || fallback.id),
+      templateVersion: Number(source.templateVersion) || 1,
+      name: String(source.name || fallback.name || '새 커스텀 템플릿'),
+      createdAt: Number(source.createdAt) || Date.now(),
+      updatedAt: Number(source.updatedAt) || Date.now(),
+      frame: Object.assign({}, fallback.frame, source.frame || {}),
+      photoPlacement: Object.assign({}, fallback.photoPlacement, source.photoPlacement || {}),
+      elements: Array.isArray(source.elements) ? source.elements : [],
+      internalCards: Array.isArray(source.internalCards) ? source.internalCards : [],
+      thumbnail: source.thumbnail || null,
+    });
+  }
+
+  function loadCustomTemplates() {
+    var arr = window.KeyxifDB.loadJSON('keyxif.customTemplates');
+    state.customTemplates = Array.isArray(arr)
+      ? arr.map(normalizeCustomTemplate).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })
+      : [];
+  }
+
+  function saveCustomTemplates() {
+    window.KeyxifDB.saveJSON('keyxif.customTemplates', state.customTemplates);
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || '')); };
+      reader.onerror = function () { reject(reader.error || new Error('이미지를 읽을 수 없습니다.')); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function dataUrlToBlob(value) {
+    var parts = String(value || '').split(',');
+    if (parts.length < 2) return null;
+    var match = parts[0].match(/^data:([^;]+);base64$/i);
+    if (!match) return null;
+    var binary = atob(parts.slice(1).join(','));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: match[1] });
+  }
+
+  function createBackupFile() {
+    window.KeyxifDB.listExported().then(function (records) {
+      return Promise.all(records.map(function (record) {
+        if (!(record.blob instanceof Blob)) return Promise.resolve(null);
+        return blobToDataUrl(record.blob).then(function (dataUrl) {
+          var copy = Object.assign({}, record);
+          delete copy.blob;
+          copy.imageDataUrl = dataUrl;
+          return copy;
+        });
+      }));
+    }).then(function (images) {
+      var logoIds = [];
+      state.buildPresets.forEach(function (preset) {
+        var id = preset && preset.buildInfo && preset.buildInfo.customLogoUri;
+        if (id && logoIds.indexOf(id) < 0) logoIds.push(id);
+      });
+      return Promise.all(logoIds.map(function (id) {
+        return window.KeyxifDB.getSource(id).then(function (record) {
+          if (!record || !(record.blob instanceof Blob)) return null;
+          return blobToDataUrl(record.blob).then(function (dataUrl) {
+            return { id: id, name: record.name || 'logo', type: record.type || record.blob.type, dataUrl: dataUrl };
+          });
+        });
+      })).then(function (logos) { return { images: images, logos: logos.filter(Boolean) }; });
+    }).then(function (assets) {
+      var backup = {
+        format: 'keyxif-web-backup', version: 1, createdAt: Date.now(),
+        settings: state.settings,
+        buildPresets: state.buildPresets,
+        recents: {
+          housing: state.recentHousing, switch: state.recentSwitches,
+          keycap: state.recentKeycaps, nickname: state.recentNicknames,
+        },
+        customLogos: assets.logos,
+        exportedImages: assets.images.filter(Boolean),
+      };
+      var d = new Date();
+      var name = 'Keyxif_web_backup_' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes()) + '.json';
+      downloadBlob(new Blob([JSON.stringify(backup)], { type: 'application/json' }), name);
+      message('백업 파일을 만들었습니다.');
+    }).catch(function (error) {
+      message('백업 실패: ' + (error && error.message ? error.message : '파일을 만들 수 없습니다.'));
+    });
+  }
+
+  function restoreBackupFile(file) {
+    if (!file) return;
+    file.text().then(function (raw) {
+      var backup = JSON.parse(raw);
+      if (backup.format !== 'keyxif-web-backup' || Number(backup.version) !== 1) throw new Error('Keyxif 웹 백업 파일이 아닙니다.');
+      state.settings = normalizeSettings(backup.settings);
+      window.KeyxifDB.saveJSON('keyxif.settings', state.settings);
+
+      var imported = Array.isArray(backup.buildPresets) ? backup.buildPresets : [];
+      var importedIds = {};
+      imported.forEach(function (preset) { if (preset && preset.id) importedIds[preset.id] = true; });
+      state.buildPresets = imported.concat(state.buildPresets.filter(function (preset) { return !importedIds[preset.id]; }))
+        .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      saveBuildPresets();
+
+      var recents = backup.recents || {};
+      var limit = 50;
+      (recents.housing || []).slice().reverse().forEach(function (v) { state.recentHousing = addRecent(state.recentHousing, v, limit); });
+      (recents.switch || []).slice().reverse().forEach(function (v) { state.recentSwitches = addRecent(state.recentSwitches, v, limit); });
+      (recents.keycap || []).slice().reverse().forEach(function (v) { state.recentKeycaps = addRecent(state.recentKeycaps, v, limit); });
+      (recents.nickname || []).slice().reverse().forEach(function (v) { state.recentNicknames = addRecent(state.recentNicknames, v, limit); });
+      saveRecents();
+
+      var customLogos = Array.isArray(backup.customLogos) ? backup.customLogos : [];
+      var logoChain = Promise.resolve();
+      customLogos.forEach(function (logo) {
+        logoChain = logoChain.then(function () {
+          var blob = dataUrlToBlob(logo.dataUrl);
+          if (!blob || !logo.id) return;
+          return window.KeyxifDB.putSource({ id: logo.id, name: logo.name || 'logo', type: logo.type || blob.type, blob: blob });
+        });
+      });
+
+      var images = Array.isArray(backup.exportedImages) ? backup.exportedImages : [];
+      var chain = logoChain;
+      var restored = 0;
+      images.forEach(function (image) {
+        chain = chain.then(function () {
+          var blob = dataUrlToBlob(image.imageDataUrl);
+          if (!blob) return;
+          var record = Object.assign({}, image, { blob: blob });
+          delete record.imageDataUrl;
+          restored++;
+          return window.KeyxifDB.putExported(record);
+        });
+      });
+      return chain.then(function () {
+        applyTheme();
+        return refreshExported().then(function () {
+          message('복원 완료: 프리셋 ' + imported.length + '개, 완성 이미지 ' + restored + '개');
+          emit();
+        });
+      });
+    }).catch(function (error) {
+      message('복원 실패: ' + (error && error.message ? error.message : '백업 파일을 읽을 수 없습니다.'));
+    });
+  }
+
   /* ------------------------------------------------------------------ */
   /* Draft session (DraftSessionRepository.kt)                           */
   /* ------------------------------------------------------------------ */
@@ -395,6 +1031,7 @@
   function serializeDraft() {
     return {
       selectedTemplate: state.selectedTemplate,
+      selectedCustomTemplateId: state.selectedCustomTemplateId,
       currentStep: state.currentStep,
       selectedPhotoId: state.selectedPhotoId,
       lastUpdatedAt: Date.now(),
@@ -475,6 +1112,7 @@
       return {
         photoItems: photos,
         selectedTemplate: enumOr(raw.selectedTemplate, CARD_TEMPLATES, 'ClassicFrame'),
+        selectedCustomTemplateId: raw.selectedCustomTemplateId || null,
         currentStep: raw.currentStep === 'Adjust' ? 'Template' : enumOr(raw.currentStep, STEPS, 'Photos'),
         selectedPhotoId: raw.selectedPhotoId || null,
         settings: normalizeSettings(raw.settings),
@@ -592,16 +1230,18 @@
     });
   }
 
-  function renderPhotoCanvas(photo, template, settings, maxLongSide, sourceBlob) {
+  function renderPhotoCanvas(photo, template, settings, maxLongSide, sourceBlob, customTemplate) {
     return withRenderSlot(function () {
       return Promise.all([
         sourceBlob ? decodeBlob(sourceBlob, maxLongSide) : decodeSource(photo.uri, maxLongSide),
         resolveRenderAssets(photo.buildInfo, photo.analysisResult.paletteColors),
+        ensureTemplateFontReady(settings),
       ]).then(function (parts) {
         var bmp = parts[0], assets = parts[1];
         var buildInfo = Object.assign({}, photo.buildInfo, { customLogoImage: assets.customLogoImage || null });
         var canvas = window.KeyxifRenderer.render({
           image: bmp, buildInfo: buildInfo, template: template, settings: settings,
+          customTemplate: customTemplate || null,
           maxLongSide: maxLongSide,
           renderStyle: photo.renderStyle || defaultRenderStyle(),
           assets: {
@@ -622,7 +1262,17 @@
   function renderPreviewBitmap(photoId, maxLongSide) {
     var photo = findPhoto(photoId);
     if (!photo) return Promise.resolve(null);
-    return renderPhotoCanvas(photo, state.selectedTemplate, state.settings, maxLongSide || PREVIEW_LONG_SIDE_LIMIT);
+    var customTemplate = window.KEYXIF_CUSTOM_TEMPLATE_UI_ENABLED === true && state.selectedCustomTemplateId
+      ? state.customTemplates.find(function (item) { return item.id === state.selectedCustomTemplateId; }) || null
+      : null;
+    return renderPhotoCanvas(
+      photo,
+      state.selectedTemplate,
+      state.settings,
+      maxLongSide || PREVIEW_LONG_SIDE_LIMIT,
+      null,
+      customTemplate
+    );
   }
   function renderSourcePreviewBitmap(photoId, maxLongSide) {
     var photo = findPhoto(photoId);
@@ -746,6 +1396,9 @@
     var token = ++exportJobToken; // REPLACE 정책: 새 작업이 이전 작업을 대체
     var s = state.settings;
     var template = state.selectedTemplate;
+    var customTemplate = window.KEYXIF_CUSTOM_TEMPLATE_UI_ENABLED === true && state.selectedCustomTemplateId
+      ? state.customTemplates.find(function (item) { return item.id === state.selectedCustomTemplateId; }) || null
+      : null;
     var total = targets.length;
 
     state.exportProgress = {
@@ -796,7 +1449,7 @@
             };
             photo.renderStatus = 'Rendering';
             emit();
-            return renderPhotoCanvas(item.snap, template, s, saveLongSide, item.blob).then(function (canvas) {
+            return renderPhotoCanvas(item.snap, template, s, saveLongSide, item.blob, customTemplate).then(function (canvas) {
               return encodeCanvas(canvas, wantWebp, s.webpQuality).then(function (encoded) {
                 if (token !== exportJobToken) return; // 부수효과(다운로드/기록) 직전 재확인
                 var blob = encoded.blob;
@@ -808,7 +1461,7 @@
                   id: Date.now() + '-' + photo.id + '-' + index,
                   uri: '', fileName: fileName, createdAt: Date.now(),
                   width: canvas.width, height: canvas.height,
-                  fileSizeBytes: blob.size, templateName: template,
+                  fileSizeBytes: blob.size, templateName: customTemplate ? customTemplate.name : template,
                   housing: m(item.snap.buildInfo.housing), switchName: m(item.snap.buildInfo.switchName),
                   keycap: m(item.snap.buildInfo.keycap), nickname: m(item.snap.buildInfo.nickname),
                   paletteColors: item.snap.analysisResult.paletteColors.slice(),
@@ -924,6 +1577,35 @@
     });
   }
 
+  function addCustomTemplateElement(factory) {
+    var editor = state.customTemplateEditorState;
+    if (!editor) return;
+    var before = JSON.parse(JSON.stringify(editor.draft));
+    var space = nextCustomTemplateSpace(editor);
+    var element = factory(space, nextCustomTemplateZ(editor));
+    if (space === 'internalCard' && editor.selectedCardId) {
+      element = Object.assign({}, element, { containerId: editor.selectedCardId });
+    }
+    if (element.coordinateSpace === 'frame') {
+      var safe = avoidPhotoSafeArea(
+        { x: element.x, y: element.y, width: element.width, height: element.height },
+        editor.draft.photoPlacement
+      );
+      element = Object.assign({}, element, safe);
+    }
+    editor.draft.elements = (editor.draft.elements || []).concat([element]);
+    editor.draft.updatedAt = Date.now();
+    editor.activeTab = 'Element';
+    editor.selectedTarget = 'Element';
+    editor.selectedElementId = element.id;
+    editor.selectedCardId = space === 'internalCard' ? editor.selectedCardId : null;
+    editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+    editor.redoStack = [];
+    editor.isDirty = true;
+    updateCustomTemplateCardSpaceWarnings(editor);
+    emit();
+  }
+
   /* ------------------------------------------------------------------ */
   /* Actions                                                              */
   /* ------------------------------------------------------------------ */
@@ -965,10 +1647,15 @@
       if (step !== 'Photos' && state.photos.length === 0) { message('먼저 사진을 추가해 주세요.'); return; }
       if (step === 'Palette' && !state.settings.showPaletteColors) step = 'Template';
       state.currentStep = step;
+      state.customTemplateEditorState = null;
       state.isSettingsOpen = false; state.settingsPageName = null; state.isGalleryOpen = false;
       emit();
     },
     navigateToPreviousStep: function () {
+      if (state.customTemplateEditorState) {
+        actions.closeCustomTemplateEditor();
+        return;
+      }
       var steps = visibleSteps(state.settings);
       var idx = steps.indexOf(state.currentStep);
       if (idx > 0) actions.navigateToStep(steps[idx - 1]);
@@ -976,6 +1663,7 @@
     handleSystemBack: function () {
       if (state.isSettingsOpen) { actions.closeSettings(); return true; }
       if (state.isGalleryOpen) { actions.closeGallery(); return true; }
+      if (state.customTemplateEditorState) { actions.closeCustomTemplateEditor(); return true; }
       if (state.currentStep !== 'Photos') { actions.navigateToPreviousStep(); return true; }
       return false;
     },
@@ -1152,12 +1840,570 @@
     // ---- Template
     selectTemplate: function (template) {
       state.selectedTemplate = template;
+      state.selectedCustomTemplateId = null;
+      state.customTemplateEditorState = null;
       emit();
       if (state.settings.rememberLastTemplate) {
         var next = normalizeSettings(Object.assign({}, state.settings, { defaultTemplate: template }));
         state.settings = next;
         window.KeyxifDB.saveJSON('keyxif.settings', next);
       }
+    },
+    selectCustomTemplate: function (templateId) {
+      var template = state.customTemplates.find(function (item) { return item.id === templateId; });
+      if (!template) return;
+      state.selectedCustomTemplateId = templateId;
+      state.customTemplateEditorState = null;
+      state.uiMessage = '커스텀 템플릿을 선택했습니다. 최종 저장 적용은 다음 단계에서 연결됩니다.';
+      emit();
+    },
+    openCustomTemplateEditor: function () {
+      state.currentStep = 'Template';
+      state.customTemplateEditorState = createCustomTemplateEditorState();
+      updateCustomTemplateCardSpaceWarnings(state.customTemplateEditorState);
+      state.isSettingsOpen = false; state.settingsPageName = null; state.isGalleryOpen = false;
+      emit();
+    },
+    editCustomTemplate: function (templateId) {
+      var template = state.customTemplates.find(function (item) { return item.id === templateId; });
+      if (!template) return;
+      state.currentStep = 'Template';
+      state.selectedCustomTemplateId = templateId;
+      state.customTemplateEditorState = createCustomTemplateEditorState(template);
+      updateCustomTemplateCardSpaceWarnings(state.customTemplateEditorState);
+      state.isSettingsOpen = false; state.settingsPageName = null; state.isGalleryOpen = false;
+      emit();
+    },
+    saveCustomTemplate: function (name) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      editor.draft.name = String(name || editor.draft.name || '새 커스텀 템플릿').trim() || '새 커스텀 템플릿';
+      editor.draft.updatedAt = Date.now();
+      updateCustomTemplateCardSpaceWarnings(editor);
+      var blocking = (editor.cardSpaceWarnings || []).find(function (warning) { return warning.severity === 'Blocking'; });
+      if (blocking) {
+        editor.selectedTarget = 'Card';
+        editor.selectedElementId = null;
+        editor.selectedCardId = blocking.cardId;
+        message('공간이 부족합니다. 카드 크기를 늘리거나 요소를 줄여주세요.');
+        return;
+      }
+      var collisionCount = frameElementsCollidingWithPhoto(editor.draft).length;
+      if (collisionCount > 0) {
+        editor.selectedTarget = 'Frame';
+        editor.selectedElementId = null;
+        editor.selectedCardId = null;
+        editor.collisionWarning = '사진 위치가 프레임 요소 ' + collisionCount + '개와 충돌합니다. 저장 전 위치를 조정해 주세요.';
+        message('사진과 겹치는 프레임 요소를 먼저 조정해 주세요.');
+        return;
+      }
+      var saved = normalizeCustomTemplate(editor.draft);
+      state.customTemplates = [saved].concat(state.customTemplates.filter(function (item) { return item.id !== saved.id; }))
+        .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      saveCustomTemplates();
+      state.selectedCustomTemplateId = saved.id;
+      state.customTemplateEditorState = createCustomTemplateEditorState(saved);
+      state.customTemplateEditorState.isDirty = false;
+      state.uiMessage = '커스텀 템플릿을 저장했습니다.';
+      emit();
+    },
+    duplicateCustomTemplate: function (templateId) {
+      var template = state.customTemplates.find(function (item) { return item.id === templateId; });
+      if (!template) { message('복제할 템플릿을 찾을 수 없습니다.'); return; }
+      var now = Date.now();
+      var copy = normalizeCustomTemplate(JSON.parse(JSON.stringify(template)));
+      copy.id = uuid();
+      copy.name = copy.name + ' 복사본';
+      copy.createdAt = now;
+      copy.updatedAt = now;
+      state.customTemplates = [copy].concat(state.customTemplates).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      state.selectedCustomTemplateId = copy.id;
+      saveCustomTemplates();
+      message('커스텀 템플릿을 복제했습니다.');
+    },
+    deleteCustomTemplate: function (templateId) {
+      state.customTemplates = state.customTemplates.filter(function (item) { return item.id !== templateId; });
+      if (state.selectedCustomTemplateId === templateId) state.selectedCustomTemplateId = null;
+      if (state.customTemplateEditorState && state.customTemplateEditorState.draft.id === templateId) state.customTemplateEditorState = null;
+      saveCustomTemplates();
+      message('커스텀 템플릿을 삭제했습니다.');
+    },
+    closeCustomTemplateEditor: function () {
+      state.customTemplateEditorState = null;
+      emit();
+    },
+    resetCustomTemplateDraft: function () {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var before = JSON.parse(JSON.stringify(editor.draft));
+      var reset = createBlankCustomTemplate();
+      reset.id = editor.draft.id;
+      reset.name = editor.draft.name || reset.name;
+      reset.createdAt = editor.draft.createdAt || reset.createdAt;
+      reset.updatedAt = Date.now();
+      editor.draft = normalizeCustomTemplate(reset);
+      editor.selectedTarget = 'Photo';
+      editor.selectedElementId = null;
+      editor.selectedCardId = null;
+      editor.snapGuides = [];
+      editor.collisionWarning = null;
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    selectCustomTemplateEditorTab: function (tab) {
+      if (!state.customTemplateEditorState || CUSTOM_TEMPLATE_TABS.indexOf(tab) < 0) return;
+      var editor = state.customTemplateEditorState;
+      editor.activeTab = tab;
+      if (tab === 'Frame') {
+        editor.selectedTarget = 'Frame';
+        editor.selectedElementId = null;
+        editor.selectedCardId = null;
+      }
+      emit();
+    },
+    selectCustomTemplateElement: function (elementId) {
+      if (!state.customTemplateEditorState) return;
+      state.customTemplateEditorState.selectedTarget = elementId ? 'Element' : 'Photo';
+      state.customTemplateEditorState.selectedElementId = elementId || null;
+      emit();
+    },
+    selectCustomTemplateCard: function (cardId) {
+      if (!state.customTemplateEditorState) return;
+      state.customTemplateEditorState.selectedTarget = cardId ? 'Card' : 'Photo';
+      state.customTemplateEditorState.selectedElementId = null;
+      state.customTemplateEditorState.selectedCardId = cardId || null;
+      emit();
+    },
+    selectCustomTemplateTarget: function (target) {
+      if (!state.customTemplateEditorState) return;
+      state.customTemplateEditorState.selectedTarget = target || 'Photo';
+      if (target !== 'Element') state.customTemplateEditorState.selectedElementId = null;
+      if (target !== 'Card') state.customTemplateEditorState.selectedCardId = null;
+      emit();
+    },
+    beginCustomTemplateInteraction: function () {
+      customTemplateInteractionStart = state.customTemplateEditorState
+        ? JSON.parse(JSON.stringify(state.customTemplateEditorState.draft))
+        : null;
+    },
+    updateCustomTemplateElementBounds: function (elementId, bounds) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var selected = (editor.draft.elements || []).find(function (element) { return element.id === elementId; });
+      if (!selected) return;
+      var siblings = (editor.draft.elements || []).filter(function (element) {
+        return element.id !== elementId &&
+          !element.hidden &&
+          element.coordinateSpace === selected.coordinateSpace &&
+          element.containerId === selected.containerId;
+      }).map(function (element) {
+        return { x: element.x, y: element.y, width: element.width, height: element.height };
+      });
+      var snapped = snapBounds(
+        bounds,
+        selected.coordinateSpace,
+        selected.containerId,
+        siblings,
+        selected.coordinateSpace === 'frame' ? 0.018 : 0
+      );
+      editor.draft.elements = editor.draft.elements.map(function (element) {
+        if (element.id !== elementId) return element;
+        var safeBounds = element.coordinateSpace === 'frame'
+          ? avoidPhotoSafeArea(snapped.bounds, editor.draft.photoPlacement)
+          : snapped.bounds;
+        return Object.assign({}, element, {
+          x: safeBounds.x, y: safeBounds.y, width: safeBounds.width, height: safeBounds.height,
+        });
+      });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedElementId = elementId;
+      var updated = editor.draft.elements.find(function (element) { return element.id === elementId; });
+      editor.selectedCardId = updated && updated.coordinateSpace === 'internalCard' ? updated.containerId : null;
+      editor.snapGuides = snapped.guides;
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    updateCustomTemplateElementPlacement: function (elementId, placement) {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !placement) return;
+      var selected = (editor.draft.elements || []).find(function (element) { return element.id === elementId; });
+      if (!selected) return;
+      var coordinateSpace = placement.coordinateSpace || selected.coordinateSpace;
+      var containerId = placement.containerId || elementContainerId(coordinateSpace);
+      var siblings = (editor.draft.elements || []).filter(function (element) {
+        return element.id !== elementId &&
+          !element.hidden &&
+          element.coordinateSpace === coordinateSpace &&
+          element.containerId === containerId;
+      }).map(function (element) {
+        return { x: element.x, y: element.y, width: element.width, height: element.height };
+      });
+      var snapped = snapBounds(
+        placement.bounds,
+        coordinateSpace,
+        containerId,
+        siblings,
+        0.018,
+        0.018
+      );
+      editor.draft.elements = editor.draft.elements.map(function (element) {
+        if (element.id !== elementId) return element;
+        var safeBounds = coordinateSpace === 'frame'
+          ? avoidPhotoSafeArea(snapped.bounds, editor.draft.photoPlacement)
+          : snapped.bounds;
+        return Object.assign({}, element, {
+          coordinateSpace: coordinateSpace,
+          containerId: containerId,
+          x: safeBounds.x,
+          y: safeBounds.y,
+          width: safeBounds.width,
+          height: safeBounds.height,
+        });
+      });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Element';
+      editor.selectedElementId = elementId;
+      editor.selectedCardId = coordinateSpace === 'internalCard' ? containerId : null;
+      editor.snapGuides = snapped.guides;
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    nudgeCustomTemplateSelection: function (dx, dy) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      actions.beginCustomTemplateInteraction();
+      if (editor.selectedTarget === 'Element' && editor.selectedElementId) {
+        var element = (editor.draft.elements || []).find(function (item) { return item.id === editor.selectedElementId; });
+        if (element) actions.updateCustomTemplateElementBounds(element.id, moveBounds(elementBounds(element), dx, dy));
+      } else if (editor.selectedTarget === 'Card' && editor.selectedCardId) {
+        var card = (editor.draft.internalCards || []).find(function (item) { return item.id === editor.selectedCardId; });
+        if (card) actions.updateCustomTemplateCardBounds(card.id, moveBounds(cardBounds(card), dx, dy));
+      } else if (editor.selectedTarget === 'Photo') {
+        actions.updateCustomTemplatePhotoBounds(moveBounds(photoBounds(editor.draft.photoPlacement), dx, dy));
+      }
+      actions.finishCustomTemplateInteraction();
+    },
+    alignCustomTemplateSelection: function (alignment) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      function aligned(bounds) {
+        if (alignment === 'Left') return Object.assign({}, bounds, { x: 0 });
+        if (alignment === 'CenterX') return Object.assign({}, bounds, { x: (1 - bounds.width) / 2 });
+        if (alignment === 'Right') return Object.assign({}, bounds, { x: 1 - bounds.width });
+        if (alignment === 'Top') return Object.assign({}, bounds, { y: 0 });
+        if (alignment === 'CenterY') return Object.assign({}, bounds, { y: (1 - bounds.height) / 2 });
+        if (alignment === 'Bottom') return Object.assign({}, bounds, { y: 1 - bounds.height });
+        return bounds;
+      }
+      actions.beginCustomTemplateInteraction();
+      if (editor.selectedTarget === 'Element' && editor.selectedElementId) {
+        var element = (editor.draft.elements || []).find(function (item) { return item.id === editor.selectedElementId; });
+        if (element) actions.updateCustomTemplateElementBounds(element.id, aligned(elementBounds(element)));
+      } else if (editor.selectedTarget === 'Card' && editor.selectedCardId) {
+        var card = (editor.draft.internalCards || []).find(function (item) { return item.id === editor.selectedCardId; });
+        if (card) actions.updateCustomTemplateCardBounds(card.id, aligned(cardBounds(card)));
+      } else if (editor.selectedTarget === 'Photo') {
+        actions.updateCustomTemplatePhotoBounds(aligned(photoBounds(editor.draft.photoPlacement)));
+      }
+      actions.finishCustomTemplateInteraction();
+    },
+    addCustomTemplateTextElement: function (field) {
+      var editor = state.customTemplateEditorState;
+      if (editor) {
+        var duplicate = (editor.draft.elements || []).find(function (element) {
+          return !element.hidden &&
+            element.type === 'text' &&
+            element.content &&
+            element.content.type === 'buildField' &&
+            element.content.field === field;
+        });
+        if (duplicate) {
+          editor.activeTab = 'Element';
+          editor.selectedTarget = 'Element';
+          editor.selectedElementId = duplicate.id;
+          editor.selectedCardId = duplicate.coordinateSpace === 'internalCard' ? duplicate.containerId : null;
+          message('이미 추가된 텍스트 요소입니다.');
+          return;
+        }
+      }
+      addCustomTemplateElement(function (space, zIndex) {
+        return createCustomTemplateTextElement(field, space, zIndex);
+      });
+    },
+    addCustomTemplateLogoElement: function () {
+      addCustomTemplateElement(function (space, zIndex) {
+        return createCustomTemplateLogoElement(space, zIndex);
+      });
+    },
+    addCustomTemplateColorChipElement: function () {
+      addCustomTemplateElement(function (space, zIndex) {
+        return createCustomTemplateColorChipElement(space, zIndex);
+      });
+    },
+    duplicateSelectedCustomTemplateElement: function () {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !editor.selectedElementId) return;
+      var selected = (editor.draft.elements || []).find(function (element) { return element.id === editor.selectedElementId; });
+      if (!selected) return;
+      var before = JSON.parse(JSON.stringify(editor.draft));
+      var copy = JSON.parse(JSON.stringify(selected));
+      copy.id = uuid();
+      copy.zIndex = nextCustomTemplateZ(editor);
+      copy.x = Math.min(Math.max(copy.x + 0.035, 0), 1 - copy.width);
+      copy.y = Math.min(Math.max(copy.y + 0.035, 0), 1 - copy.height);
+      if (copy.coordinateSpace === 'frame') {
+        var safe = avoidPhotoSafeArea({ x: copy.x, y: copy.y, width: copy.width, height: copy.height }, editor.draft.photoPlacement);
+        copy = Object.assign(copy, safe);
+      }
+      editor.draft.elements = editor.draft.elements.concat([copy]);
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Element';
+      editor.selectedElementId = copy.id;
+      editor.selectedCardId = copy.coordinateSpace === 'internalCard' ? copy.containerId : null;
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    addCustomTemplateInternalCard: function (stylePreset) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var before = JSON.parse(JSON.stringify(editor.draft));
+      var card = createCustomTemplateInternalCard(nextCustomTemplateCardZ(editor), stylePreset);
+      editor.draft.internalCards = (editor.draft.internalCards || []).concat([card]);
+      editor.draft.updatedAt = Date.now();
+      editor.activeTab = 'Card';
+      editor.selectedTarget = 'Card';
+      editor.selectedElementId = null;
+      editor.selectedCardId = card.id;
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    updateCustomTemplateCardBounds: function (cardId, bounds) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var siblings = (editor.draft.internalCards || []).filter(function (card) {
+        return card.id !== cardId && !card.hidden;
+      }).map(function (card) {
+        return { x: card.x, y: card.y, width: card.width, height: card.height };
+      });
+      var snapped = snapBounds(bounds, 'photo', 'photo', siblings, 0);
+      editor.draft.internalCards = (editor.draft.internalCards || []).map(function (card) {
+        if (card.id !== cardId) return card;
+        return Object.assign({}, card, {
+          x: snapped.bounds.x, y: snapped.bounds.y, width: snapped.bounds.width, height: snapped.bounds.height,
+        });
+      });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Card';
+      editor.selectedElementId = null;
+      editor.selectedCardId = cardId;
+      editor.snapGuides = snapped.guides;
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    applySelectedCustomTemplateCardStyle: function (stylePreset) {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !editor.selectedCardId) return;
+      var before = JSON.parse(JSON.stringify(editor.draft));
+      editor.draft.internalCards = (editor.draft.internalCards || []).map(function (card) {
+        return card.id === editor.selectedCardId
+          ? Object.assign({}, card, { style: cardStylePreset(stylePreset) })
+          : card;
+      });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Card';
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    updateSelectedCustomTemplateCardStyle: function (partialStyle) {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !editor.selectedCardId || !partialStyle) return;
+      var before = JSON.parse(JSON.stringify(editor.draft));
+      editor.draft.internalCards = (editor.draft.internalCards || []).map(function (card) {
+        if (card.id !== editor.selectedCardId) return card;
+        var nextStyle = Object.assign({}, card.style || {}, partialStyle);
+        if (partialStyle.backgroundColor != null) {
+          nextStyle.backgroundColor = normalizeCustomColor(partialStyle.backgroundColor) || (card.style && card.style.backgroundColor) || '#FFFFFF';
+        }
+        if (partialStyle.borderColor != null) {
+          nextStyle.borderColor = normalizeCustomColor(partialStyle.borderColor) || (card.style && card.style.borderColor) || '#FFFFFF';
+        }
+        nextStyle.opacity = clamp(Number(nextStyle.opacity), 0.05, 1);
+        nextStyle.radius = clamp(Number(nextStyle.radius), 0, 0.18);
+        nextStyle.padding = clamp(Number(nextStyle.padding), 0, 0.24);
+        nextStyle.borderWidth = clamp(Number(nextStyle.borderWidth), 0, 0.02);
+        return Object.assign({}, card, { style: nextStyle });
+      });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Card';
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    updateCustomTemplatePhotoBounds: function (bounds) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var contained = containPhotoBounds(bounds);
+      var snapped = snapBounds(contained, 'frame', 'frame', [], 0);
+      editor.draft.photoPlacement = Object.assign({}, editor.draft.photoPlacement, contained, { scale: contained.width });
+      editor.draft.photoPlacement = Object.assign({}, editor.draft.photoPlacement, snapped.bounds, { scale: snapped.bounds.width });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Photo';
+      editor.selectedElementId = null;
+      editor.selectedCardId = null;
+      editor.snapGuides = snapped.guides;
+      var collisionCount = frameElementsCollidingWithPhoto(editor.draft).length;
+      editor.collisionWarning = collisionCount > 0
+        ? '사진 위치가 프레임 요소 ' + collisionCount + '개와 충돌합니다. 저장 전 위치를 조정해 주세요.'
+        : null;
+      editor.isDirty = true;
+      emit();
+    },
+    updateCustomTemplateFrameSize: function (logicalWidth, logicalHeight) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var photo = editor.draft.photoPlacement || {};
+      var w = Math.max(Number(logicalWidth) || 1, 0.65, Number(photo.width) || 0.01);
+      var h = Math.max(Number(logicalHeight) || 1, 0.65, Number(photo.height) || 0.01);
+      var ratio = w / h;
+      editor.draft.frame = Object.assign({}, editor.draft.frame, {
+        logicalWidth: w, logicalHeight: h, aspectRatio: ratio,
+      });
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Frame';
+      editor.selectedElementId = null;
+      editor.selectedCardId = null;
+      editor.isDirty = true;
+      emit();
+    },
+    updateCustomTemplateOuterMargins: function (partialMargins) {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !partialMargins) return;
+      var current = customTemplateMarginsFromPhoto(editor.draft.photoPlacement);
+      var margins = Object.assign({}, current, partialMargins);
+      var bounds = photoBoundsFromCustomTemplateMargins(margins);
+      var frame = customTemplateFrameFromMargins(editor.draft.photoPlacement, margins);
+      editor.draft.photoPlacement = Object.assign({}, editor.draft.photoPlacement, bounds, { scale: bounds.width });
+      editor.draft.frame = Object.assign({}, editor.draft.frame, frame);
+      editor.draft.updatedAt = Date.now();
+      editor.selectedTarget = 'Frame';
+      editor.selectedElementId = null;
+      editor.selectedCardId = null;
+      editor.snapGuides = [];
+      editor.collisionWarning = null;
+      editor.isDirty = true;
+      emit();
+    },
+    applyCustomTemplateFramePreset: function (preset) {
+      if (!preset) return;
+      actions.beginCustomTemplateInteraction();
+      actions.updateCustomTemplateFrameSize(preset.width, preset.height);
+      actions.finishCustomTemplateInteraction();
+    },
+    updateCustomTemplatePhotoAspectRatio: function (aspectRatio) {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      var ratio = Number(aspectRatio) > 0 ? Number(aspectRatio) : 1;
+      if (Math.abs((editor.draft.photoPlacement.aspectRatio || 1) - ratio) < 0.001) return;
+      var nextPhoto = Object.assign({}, editor.draft.photoPlacement, { aspectRatio: ratio });
+      var margins = customTemplateMarginsFromPhoto(nextPhoto);
+      editor.draft.photoPlacement = nextPhoto;
+      editor.draft.frame = Object.assign({}, editor.draft.frame, customTemplateFrameFromMargins(nextPhoto, margins));
+      editor.draft.updatedAt = Date.now();
+      emit();
+    },
+    finishCustomTemplateInteraction: function () {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !customTemplateInteractionStart) return;
+      var before = customTemplateInteractionStart;
+      customTemplateInteractionStart = null;
+      if (JSON.stringify(before) === JSON.stringify(editor.draft)) {
+        editor.snapGuides = [];
+        emit();
+        return;
+      }
+      editor.snapGuides = [];
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    deleteSelectedCustomTemplateElement: function () {
+      var editor = state.customTemplateEditorState;
+      if (!editor) return;
+      if (editor.selectedTarget === 'Card' && editor.selectedCardId) {
+        var beforeCard = JSON.parse(JSON.stringify(editor.draft));
+        var cardId = editor.selectedCardId;
+        editor.draft.internalCards = (editor.draft.internalCards || []).filter(function (card) { return card.id !== cardId; });
+        editor.draft.elements = (editor.draft.elements || []).filter(function (element) {
+          return !(element.coordinateSpace === 'internalCard' && element.containerId === cardId);
+        });
+        editor.draft.updatedAt = Date.now();
+        editor.selectedTarget = 'Photo';
+        editor.selectedElementId = null;
+        editor.selectedCardId = null;
+        editor.undoStack = editor.undoStack.concat([beforeCard]).slice(-40);
+        editor.redoStack = [];
+        editor.isDirty = true;
+        updateCustomTemplateCardSpaceWarnings(editor);
+        emit();
+        return;
+      }
+      if (!editor.selectedElementId) return;
+      var before = JSON.parse(JSON.stringify(editor.draft));
+      var next = editor.draft.elements.filter(function (element) { return element.id !== editor.selectedElementId; });
+      if (next.length === editor.draft.elements.length) return;
+      editor.draft.elements = next;
+      editor.draft.updatedAt = Date.now();
+      editor.selectedElementId = null;
+      editor.undoStack = editor.undoStack.concat([before]).slice(-40);
+      editor.redoStack = [];
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    undoCustomTemplateEdit: function () {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !editor.undoStack.length) return;
+      var previous = editor.undoStack[editor.undoStack.length - 1];
+      editor.undoStack = editor.undoStack.slice(0, -1);
+      editor.redoStack = editor.redoStack.concat([JSON.parse(JSON.stringify(editor.draft))]).slice(-40);
+      editor.draft = previous;
+      editor.selectedElementId = previous.elements[0] ? previous.elements[0].id : null;
+      editor.selectedCardId = null;
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
+    },
+    redoCustomTemplateEdit: function () {
+      var editor = state.customTemplateEditorState;
+      if (!editor || !editor.redoStack.length) return;
+      var next = editor.redoStack[editor.redoStack.length - 1];
+      editor.redoStack = editor.redoStack.slice(0, -1);
+      editor.undoStack = editor.undoStack.concat([JSON.parse(JSON.stringify(editor.draft))]).slice(-40);
+      editor.draft = next;
+      editor.selectedElementId = next.elements[0] ? next.elements[0].id : null;
+      editor.selectedCardId = null;
+      editor.isDirty = true;
+      updateCustomTemplateCardSpaceWarnings(editor);
+      emit();
     },
 
     // ---- Build presets
@@ -1268,6 +2514,8 @@
         message('완성 이미지 목록 기록을 초기화했습니다.');
       });
     },
+    createBackup: createBackupFile,
+    restoreBackupFile: restoreBackupFile,
 
     // ---- Draft
     restoreDraftSession: function () {
@@ -1297,6 +2545,10 @@
       chain.then(function () {
         state.photos = validated;
         state.selectedTemplate = draft.selectedTemplate;
+        state.selectedCustomTemplateId = draft.selectedCustomTemplateId &&
+          state.customTemplates.some(function (template) { return template.id === draft.selectedCustomTemplateId; })
+          ? draft.selectedCustomTemplateId
+          : null;
         state.currentStep = draft.currentStep;
         state.selectedPhotoId = draft.selectedPhotoId;
         state.isSettingsOpen = false;
@@ -1358,6 +2610,7 @@
       applyTheme();
       loadRecents();
       loadBuildPresets();
+      loadCustomTemplates();
       return refreshExported();
     }).then(function () {
       var draft = decodeDraft(window.KeyxifDB.loadJSON('keyxif.draft'));
@@ -1411,6 +2664,11 @@
       QUALITY_PRESETS: QUALITY_PRESETS,
       QUALITY_PRESET_NAME: QUALITY_PRESET_NAME,
       FILE_NAME_RULE_NAME: FILE_NAME_RULE_NAME,
+      TEMPLATE_FONT_NAME: TEMPLATE_FONT_NAME,
+      CUSTOM_TEMPLATE_TABS: CUSTOM_TEMPLATE_TABS,
+      CUSTOM_TEMPLATE_TAB_NAME: CUSTOM_TEMPLATE_TAB_NAME,
+      CUSTOM_TEMPLATE_CARD_STYLE_PRESETS: CUSTOM_TEMPLATE_CARD_STYLE_PRESETS,
+      CUSTOM_TEMPLATE_CARD_STYLE_NAME: CUSTOM_TEMPLATE_CARD_STYLE_NAME,
       SAVE_LONG_SIDE_LIMIT: SAVE_LONG_SIDE_LIMIT,
       PREVIEW_LONG_SIDE_LIMIT: PREVIEW_LONG_SIDE_LIMIT,
     },

@@ -24,7 +24,7 @@ fun KeyboardBuildInfo.toDisplayRows(
     includeNickname: Boolean = false,
 ): List<BuildInfoRow> {
     return buildList {
-        housing.meaningfulBuildTextOrNull()?.let { add(BuildInfoRow("Housing", it)) }
+        housing.meaningfulBuildTextOrNull()?.let { add(BuildInfoRow("BOARD", it)) }
         switchName.meaningfulBuildTextOrNull()?.let { add(BuildInfoRow("Switch", it)) }
         plate.meaningfulBuildTextOrNull()?.let { add(BuildInfoRow("Plate", it)) }
         mount.meaningfulBuildTextOrNull()?.let { add(BuildInfoRow("Mount", it)) }

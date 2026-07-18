@@ -1,4 +1,4 @@
-/* =============================================================================
+﻿/* =============================================================================
    Keyxif Web — 앱 셸 (KeyxifApp.kt 포트)
    topbar / stepbar / screen 라우팅 / bottombar / snackbar / draft 다이얼로그 / back
    ============================================================================= */
@@ -121,11 +121,16 @@
       var steps = state.settings.showPaletteColors ? consts.STEPS.slice() : ['Photos', 'BuildInfo', 'Template', 'Export'];
       var currentIdx = steps.indexOf(state.currentStep);
       steps.forEach(function (step, i) {
-        var cls = 'step-chip' + (i === currentIdx ? ' selected' : (i < currentIdx ? ' done' : ''));
+        var locked = state.photos.length === 0 && step !== 'Photos';
+        var cls = 'step-chip' + (i === currentIdx ? ' selected' : (i < currentIdx ? ' done' : '')) + (locked ? ' locked' : '');
         var badge = i < currentIdx
           ? '<span class="step-badge">' + SHELL_ICONS.check + '</span>'
           : '<span class="step-badge">' + (i + 1) + '</span>';
         var chip = h('<button class="' + cls + ' label-medium">' + badge + '<span>' + (stepLabels[step] || helpers.text('색상', 'Color')) + '</span></button>');
+        if (locked) {
+          chip.setAttribute('aria-disabled', 'true');
+          chip.title = helpers.text('사진을 먼저 추가해 주세요.', 'Add photos first.');
+        }
         chip.addEventListener('click', function () { actions.navigateToStep(step); });
         stepBar.appendChild(chip);
       });
@@ -137,6 +142,8 @@
   /* ---- Bottom bar (§4.2) ---- */
   function buildBottombar(state) {
     if (state.isSettingsOpen || state.isGalleryOpen) return null;
+    if (window.KEYXIF_CUSTOM_TEMPLATE_UI_ENABLED === true && state.customTemplateEditorState) return null;
+    if (state.currentStep === 'Photos' && state.photos.length === 0) return null;
     var bar = h('<div class="bottombar"></div>');
     var isSaving = state.exportProgress.isSaving;
     var steps = state.settings.showPaletteColors ? consts.STEPS.slice() : ['Photos', 'BuildInfo', 'Template', 'Export'];
@@ -299,10 +306,10 @@
     consts = store.consts;
 
     // 파비콘
-    if (window.KEYXIF_ASSETS && window.KEYXIF_ASSETS.ic_keyxif) {
+    if (window.KEYXIF_ASSETS && (window.KEYXIF_ASSETS.logo_keyxif_b || window.KEYXIF_ASSETS.logo_keyxif_w || window.KEYXIF_ASSETS.ic_keyxif)) {
       var link = document.createElement('link');
       link.rel = 'icon';
-      link.href = window.KEYXIF_ASSETS.ic_keyxif;
+      link.href = window.KEYXIF_ASSETS.logo_keyxif_b || window.KEYXIF_ASSETS.logo_keyxif_w || window.KEYXIF_ASSETS.ic_keyxif;
       document.head.appendChild(link);
     }
 

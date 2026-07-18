@@ -155,7 +155,7 @@ class BottomSpecBarRenderer : TemplateRenderer {
         canvas.drawRect(0f, top, w, h, CanvasRenderUtils.paint(assets.cardBackgroundColor, 1f))
         val pad = w * 0.035f
         val primaryRows = info.toDisplayRows()
-            .filter { it.label in setOf("Housing", "Switch", "Keycap") }
+            .filter { it.label in setOf("BOARD", "Switch", "Keycap") }
             .take(3)
         val labelPaint = regular(scaled(h * 0.0105f, settings), assets.cardContentColor)
         val valuePaint = medium(scaled(h * 0.0165f, settings), assets.cardContentColor)
@@ -342,7 +342,7 @@ class DarkGlassStripRenderer : TemplateRenderer {
 
     override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
         val rows = info.toDisplayRows()
-            .filter { it.label in setOf("Housing", "Switch", "Keycap") }
+            .filter { it.label in setOf("BOARD", "Switch", "Keycap") }
             .take(3)
         val colors = CanvasRenderUtils.visiblePaletteColors(assets, settings)
         if (rows.isEmpty() && !assets.hasLogo && colors.isEmpty()) return
@@ -535,7 +535,7 @@ class MuseumMatRenderer : TemplateRenderer {
             nicknameDetail(info, settings, title),
         )
         if (title != null || details.isNotBlank()) {
-            drawTextBaseline(canvas, "KEYXIF BUILD CARD", pad, labelTop + h * 0.006f, labelPaint, w * 0.45f)
+            drawTextBaseline(canvas, "BUILD INFO", pad, labelTop + h * 0.006f, labelPaint, w * 0.45f)
         }
         title?.let {
             drawTextBaseline(canvas, it, pad, labelTop + h * 0.05f, titlePaint, textRight - pad)
@@ -673,6 +673,148 @@ class CleanSignatureRenderer : TemplateRenderer {
     }
 }
 
+class EditorialCoverRenderer : TemplateRenderer {
+    override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Mixed
+    override fun photoPlacement(): PhotoPlacement = PhotoPlacement.CenterCrop
+
+    override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
+        val w = bounds.width()
+        val h = bounds.height()
+        val pad = min(w, h) * 0.038f
+        val title = info.displayTitleOrNull()
+        val mainLine = info.housing.meaningfulBuildTextOrNull() ?: title
+        val switchLine = info.switchName.meaningfulBuildTextOrNull()
+        val keycapLine = info.keycap.meaningfulBuildTextOrNull()
+        val specLine = detailText(info.plate, info.mount, separator = "  /  ")
+        val signature = nicknameDetail(info, settings, title)
+        if (title == null && mainLine == null && switchLine == null && keycapLine == null && signature.isNullOrBlank() && !assets.hasLogo) return
+        val isLandscape = w > h * 1.12f
+
+        CanvasRenderUtils.drawGradientScrim(
+            canvas = canvas,
+            rect = RectF(0f, 0f, w, h * if (isLandscape) 0.30f else 0.36f),
+            startColor = Color.argb(if (isLandscape) 96 else 122, 0, 0, 0),
+            endColor = Color.TRANSPARENT,
+        )
+        CanvasRenderUtils.drawGradientScrim(
+            canvas = canvas,
+            rect = RectF(0f, h * if (isLandscape) 0.48f else 0.52f, w, h),
+            startColor = Color.TRANSPARENT,
+            endColor = Color.argb(150, 0, 0, 0),
+        )
+
+        val logoWidth = if (isLandscape) w * 0.155f else w * 0.20f
+        val logoTop = if (isLandscape) pad else h * 0.065f
+        val logoBox = RectF(w - pad - logoWidth, logoTop, w - pad, logoTop + h * if (isLandscape) 0.095f else 0.082f)
+        val logoTone = contrastColorAt(assets, logoBox.centerX(), logoBox.centerY())
+        drawLogoIfPresent(canvas, logoBox, assets.withLogoContrast(logoTone), logoTone, LogoAnchor.End, LogoFitMode.Inside)
+
+        val contentColor = if (assets.hasExplicitTextColor) assets.cardContentColor else Color.WHITE
+        val mainPaint = medium(scaled(h * if (isLandscape) 0.072f else 0.070f, settings), contentColor)
+        val coverLinePaint = regular(scaled(h * if (isLandscape) 0.022f else 0.018f, settings), contentColor)
+        val smallPaint = regular(scaled(h * 0.014f, settings), contentColor)
+        val titleBaseline = h * if (isLandscape) 0.18f else 0.15f
+        val titleWidth = if (isLandscape) w * 0.64f else w * 0.78f
+        mainLine?.let {
+            drawAdaptiveTextByCharacter(canvas, it.uppercase(Locale.ROOT), pad, titleBaseline, mainPaint, titleWidth, assets)
+        }
+        fun drawLines(text: String, x: Float, firstBaseline: Float, paint: Paint, maxWidth: Float, lineStep: Float, maxLines: Int) {
+            wrapTextAtSeparators(text, paint, maxWidth, maxLines).forEachIndexed { index, line ->
+                drawAdaptiveTextByCharacter(canvas, line, x, firstBaseline + lineStep * index, paint, maxWidth, assets)
+            }
+        }
+        if (isLandscape) {
+            val detailWidth = w * 0.66f
+            if (!switchLine.isNullOrBlank()) drawLines("SWITCH  $switchLine", pad, h * 0.68f, coverLinePaint, detailWidth, h * 0.046f, maxLines = 2)
+            if (!keycapLine.isNullOrBlank()) drawLines("KEYCAP  $keycapLine", pad, h * 0.76f, coverLinePaint, detailWidth, h * 0.046f, maxLines = 2)
+            if (specLine.isNotBlank()) drawLines(specLine.uppercase(Locale.ROOT), pad, h * 0.855f, smallPaint, detailWidth, h * 0.032f, maxLines = 2)
+        } else {
+            if (!switchLine.isNullOrBlank()) drawLines("SWITCH  $switchLine", pad, h * 0.735f, coverLinePaint, w * 0.68f, h * 0.032f, maxLines = 2)
+            if (!keycapLine.isNullOrBlank()) drawLines("KEYCAP  $keycapLine", pad, h * 0.790f, coverLinePaint, w * 0.68f, h * 0.032f, maxLines = 2)
+            if (specLine.isNotBlank()) drawLines(specLine.uppercase(Locale.ROOT), pad, h * 0.850f, smallPaint, w * 0.68f, h * 0.026f, maxLines = 2)
+        }
+        if (!signature.isNullOrBlank()) {
+            val signaturePaint = medium(scaled(h * 0.018f, settings, settings.nicknameEmphasis), contentColor).apply {
+                textAlign = Paint.Align.RIGHT
+            }
+            drawAdaptiveTextByCharacter(
+                canvas = canvas,
+                text = signature,
+                x = w - pad,
+                baseline = h - pad * 0.88f,
+                paint = signaturePaint,
+                maxWidth = w * 0.42f,
+                assets = assets,
+            )
+        }
+    }
+}
+
+class SoftEditorialRenderer : TemplateRenderer {
+    override fun backgroundColor(): Int = Color.BLACK
+    override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Mixed
+    override fun photoPlacement(): PhotoPlacement = PhotoPlacement.CenterCrop
+
+    override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
+        val w = bounds.width()
+        val h = bounds.height()
+        val isLandscape = w > h * 1.12f
+        val pad = min(w, h) * 0.042f
+        val title = info.displayTitleOrNull()
+        val rows = rowsExcludingTitle(info.toDisplayRows(includeNickname = true), title).take(4)
+        if (title == null && rows.isEmpty() && !assets.hasLogo) return
+        CanvasRenderUtils.drawGradientScrim(
+            canvas = canvas,
+            rect = RectF(0f, h * if (isLandscape) 0.54f else 0.58f, w, h),
+            startColor = Color.TRANSPARENT,
+            endColor = Color.argb(132, 0, 0, 0),
+        )
+        CanvasRenderUtils.drawGradientScrim(
+            canvas = canvas,
+            rect = RectF(0f, 0f, w, h * 0.20f),
+            startColor = Color.argb(64, 0, 0, 0),
+            endColor = Color.TRANSPARENT,
+        )
+        val logoBox = if (isLandscape) {
+            RectF(w - pad - w * 0.155f, pad, w - pad, pad + h * 0.095f)
+        } else {
+            RectF(w - pad - w * 0.24f, pad, w - pad, pad + h * 0.085f)
+        }
+        val logoTone = contrastColorAt(assets, logoBox.centerX(), logoBox.centerY())
+        drawLogoIfPresent(canvas, logoBox, assets.withLogoContrast(logoTone), logoTone, LogoAnchor.End, LogoFitMode.Inside)
+        val contentColor = if (assets.hasExplicitTextColor) assets.cardContentColor else Color.WHITE
+        val titlePaint = medium(scaled(h * if (isLandscape) 0.040f else 0.044f, settings), contentColor)
+        title?.let {
+            val titleMaxWidth = if (isLandscape) w * 0.62f else w * 0.72f
+            val lines = wrapTextAtWords(it.uppercase(Locale.ROOT), titlePaint, titleMaxWidth, maxLines = 2)
+            val titleStart = if (isLandscape) h * 0.68f else h * 0.73f
+            lines.forEachIndexed { index, line ->
+                drawAdaptiveTextByCharacter(canvas, line, pad, titleStart + h * (index * 0.048f), titlePaint, titleMaxWidth, assets)
+            }
+        }
+        val linePaint = regular(scaled(h * if (isLandscape) 0.0155f else 0.0145f, settings), contentColor)
+        val rowText = rows.take(if (isLandscape) 3 else 4).joinToString("  /  ") { "${it.label.uppercase(Locale.ROOT)} ${it.value}" }
+        if (rowText.isNotBlank()) {
+            val x = pad
+            val y = if (isLandscape) h * 0.80f else h * 0.845f
+            val maxWidth = if (isLandscape) w * 0.76f else w * 0.76f
+            wrapTextAtSeparators(rowText, linePaint, maxWidth, maxLines = if (isLandscape) 3 else 3)
+                .forEachIndexed { index, line ->
+                    drawAdaptiveTextByCharacter(canvas, line, x, y + h * 0.026f * index, linePaint, maxWidth, assets)
+                }
+        }
+        CanvasRenderUtils.drawPaletteChipsInRect(
+            canvas = canvas,
+            colors = CanvasRenderUtils.visiblePaletteColors(assets, settings),
+            area = if (isLandscape) RectF(pad, h * 0.905f, w * 0.64f, h * 0.95f) else RectF(pad, h * 0.905f, w * 0.64f, h * 0.95f),
+            chipSize = h * 0.014f,
+            gap = h * 0.006f,
+            strokeColor = Color.argb(82, 255, 255, 255),
+            alignment = PaletteChipAlignment.Start,
+        )
+    }
+}
+
 class PlainExportRenderer : TemplateRenderer {
     override fun backgroundColor(): Int = Color.BLACK
     override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Mixed
@@ -717,6 +859,34 @@ private fun wrapTextAtWords(text: String, paint: Paint, maxWidth: Float, maxLine
     return lines.take(maxLines).mapIndexed { index, line ->
         if (index == maxLines - 1) {
             TextDrawUtils.ellipsize((listOf(line) + lines.drop(maxLines)).joinToString(" "), paint, maxWidth)
+        } else {
+            line
+        }
+    }
+}
+
+private fun wrapTextAtSeparators(text: String, paint: Paint, maxWidth: Float, maxLines: Int): List<String> {
+    val parts = text.split("/").map { it.trim() }.filter { it.isNotBlank() }
+    if (parts.size <= 1) return wrapTextAtWords(text, paint, maxWidth, maxLines)
+    val lines = mutableListOf<String>()
+    var current = ""
+    parts.forEach { part ->
+        val candidate = if (current.isBlank()) part else "$current  /  $part"
+        if (paint.measureText(candidate) <= maxWidth || current.isBlank()) {
+            current = candidate
+        } else {
+            lines += current
+            current = part
+        }
+    }
+    if (current.isNotBlank()) lines += current
+    val expanded = lines.flatMap { line ->
+        if (paint.measureText(line) <= maxWidth) listOf(line) else wrapTextAtWords(line, paint, maxWidth, maxLines)
+    }
+    if (expanded.size <= maxLines) return expanded
+    return expanded.take(maxLines).mapIndexed { index, line ->
+        if (index == maxLines - 1) {
+            TextDrawUtils.ellipsize((listOf(line) + expanded.drop(maxLines)).joinToString(" / "), paint, maxWidth)
         } else {
             line
         }
@@ -784,6 +954,71 @@ private fun rowsExcludingTitle(
     val titleKey = title.normalizedDisplayKey()
     if (titleKey.isBlank()) return rows
     return rows.filterNot { it.value.normalizedDisplayKey() == titleKey }
+}
+
+private fun drawAdaptiveTextByCharacter(
+    canvas: Canvas,
+    text: String,
+    x: Float,
+    baseline: Float,
+    paint: Paint,
+    maxWidth: Float,
+    assets: RenderAssets,
+) {
+    val safeText = TextDrawUtils.ellipsize(text, paint, maxWidth)
+    if (safeText.isBlank()) return
+    val originalAlign = paint.textAlign
+    val textWidth = paint.measureText(safeText)
+    val startX = when (originalAlign) {
+        Paint.Align.RIGHT -> x - textWidth
+        Paint.Align.CENTER -> x - textWidth / 2f
+        else -> x
+    }
+    paint.textAlign = Paint.Align.LEFT
+    var cursor = startX
+    safeText.forEach { char ->
+        val value = char.toString()
+        val advance = paint.measureText(value)
+        val sampleX = cursor + advance / 2f
+        val sampleY = baseline - paint.textSize * 0.45f
+        val color = contrastColorAt(assets, sampleX, sampleY)
+        val shadowColor = if (color == Color.WHITE) Color.argb(116, 0, 0, 0) else Color.argb(86, 255, 255, 255)
+        paint.setShadowLayer(paint.textSize * 0.055f, 0f, paint.textSize * 0.025f, shadowColor)
+        paint.color = color
+        canvas.drawText(value, cursor, baseline, paint)
+        cursor += advance
+    }
+    paint.clearShadowLayer()
+    paint.textAlign = originalAlign
+}
+
+private fun contrastColorAt(
+    assets: RenderAssets,
+    x: Float,
+    y: Float,
+): Int {
+    val color = assets.sampleRenderedColor?.invoke(x, y) ?: assets.cardBackgroundColor
+    return if (CanvasRenderUtils.isDarkColor(color)) Color.WHITE else Color.rgb(18, 19, 18)
+}
+
+private fun RenderAssets.withLogoContrast(color: Int): RenderAssets {
+    val contrastBitmap = if (color == Color.WHITE) whiteLogoBitmap else blackLogoBitmap
+    return if (contrastBitmap != null) {
+        copy(logoBitmap = contrastBitmap, logoTintColor = null)
+    } else if (logoTintColor != null) {
+        copy(logoTintColor = color)
+    } else {
+        this
+    }
+}
+
+private fun withAlpha(color: Int, alpha: Int): Int {
+    return Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color),
+    )
 }
 
 private fun String?.normalizedDisplayKey(): String {

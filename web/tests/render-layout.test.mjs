@@ -57,3 +57,19 @@ test('external layouts keep portrait and square photos uncropped', () => {
     assertFullPhoto(layoutFor(template, 1200, 1200), 1);
   }
 });
+
+test('custom template layout expands around a contained photo without cropping', () => {
+  const customTemplate = {
+    frame: { logicalWidth: 1, logicalHeight: 1.25, aspectRatio: 0.8, fill: { color: '#f7f5f0' } },
+    photoPlacement: { x: 0.08, y: 0.08, width: 0.84, height: 0.68, fitMode: 'Contain' },
+  };
+  const layout = renderer.utils.calculateCustomTemplateLayout(customTemplate, 1600, 1000, 4096);
+  assert.ok(layout.finalWidth > 1600);
+  assert.ok(layout.finalHeight > 1000);
+  assert.equal(Math.round(layout.photoRect.width()), 1600);
+  assert.equal(Math.round(layout.photoRect.height()), 1000);
+
+  const limited = renderer.utils.calculateCustomTemplateLayout(customTemplate, 2400, 1600, 1000);
+  assert.equal(Math.max(limited.finalWidth, limited.finalHeight), 1000);
+  assert.ok(Math.abs(limited.photoRect.width() / limited.photoRect.height() - 2400 / 1600) < 0.002);
+});

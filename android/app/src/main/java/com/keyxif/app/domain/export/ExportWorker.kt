@@ -129,6 +129,7 @@ class ExportWorker(
                 template = payload.template,
                 settings = payload.settings,
                 maxLongSide = saveLongSide(payload.settings),
+                customTemplate = payload.customTemplate,
             )
             renderedBitmap = bitmap
             val name = FileNameUtils.outputName(photo.buildInfo, index, payload.settings)
@@ -143,7 +144,7 @@ class ExportWorker(
                     width = bitmap.width,
                     height = bitmap.height,
                     fileSizeBytes = savedFileSize(uri),
-                    templateName = payload.template.name,
+                    templateName = payload.customTemplate?.name ?: payload.template.name,
                     housing = photo.buildInfo.housing.meaningfulBuildTextOrNull(),
                     switchName = photo.buildInfo.switchName.meaningfulBuildTextOrNull(),
                     keycap = photo.buildInfo.keycap.meaningfulBuildTextOrNull(),
