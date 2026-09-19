@@ -987,7 +987,7 @@
 
     var grid = h('<div class="grid-templates"></div>');
     // enum 순서: Models.kt 표기 순서 (ClassicFrame 먼저 보여주는 게 아니라 enum 순)
-    consts.CARD_TEMPLATES.forEach(function (tid) {
+    consts.CARD_TEMPLATES.filter(function (tid) { return tid !== 'LiquidGlassFrame'; }).forEach(function (tid) {
       var selTpl = (!CUSTOM_TEMPLATE_UI_ENABLED || !state.selectedCustomTemplateId) && state.selectedTemplate === tid;
       var card = h(
         '<button class="tpl-card' + (selTpl ? ' selected' : '') + '">' +

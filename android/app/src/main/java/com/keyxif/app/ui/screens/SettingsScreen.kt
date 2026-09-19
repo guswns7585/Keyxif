@@ -439,7 +439,7 @@ private fun TemplateSettings(
 ) {
     Text("기본 템플릿", style = MaterialTheme.typography.labelLarge)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CardTemplate.entries.forEach { template ->
+        CardTemplate.entries.filterNot { it.name == "LiquidGlassFrame" }.forEach { template ->
             FilterChip(
                 selected = settings.defaultTemplate == template,
                 onClick = { onSettingsChange { it.copy(defaultTemplate = template) } },
