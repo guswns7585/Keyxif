@@ -47,6 +47,7 @@ import com.keyxif.app.domain.customtemplate.withBounds
 import com.keyxif.app.domain.export.ExportWorkPayload
 import com.keyxif.app.domain.export.ExportWorkPayloadCodec
 import com.keyxif.app.domain.export.ExportWorker
+import com.keyxif.app.domain.export.exportFailureMessage
 import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.AppStep
 import com.keyxif.app.domain.model.BuildPreset
@@ -2334,7 +2335,7 @@ class KeyxifViewModel(
                                 when {
                                     currentPhoto.id in inaccessiblePhotoIds -> currentPhoto.copy(
                                         renderStatus = RenderStatus.Error,
-                                        errorMessage = "원본 사진 접근 권한이 만료되었습니다. 사진을 다시 추가해 주세요.",
+                                        errorMessage = "[KX-SAVE-101] 원본 사진 접근 권한이 만료되었습니다. 사진을 다시 추가해 주세요.",
                                     )
                                     else -> durableById[currentPhoto.id]?.let { durable ->
                                         currentPhoto.copy(uri = durable.uri, buildInfo = durable.buildInfo)
@@ -2359,7 +2360,7 @@ class KeyxifViewModel(
                                 isSaving = false,
                                 total = photos.size,
                                 failureCount = photos.size,
-                                message = error.message ?: "저장 작업을 준비할 수 없습니다.",
+                                message = exportFailureMessage(error),
                             ),
                         )
                     }
@@ -2744,7 +2745,11 @@ class KeyxifViewModel(
         val success = output.getInt(ExportWorker.KEY_SUCCESS_COUNT, 0)
         val failure = output.getInt(ExportWorker.KEY_FAILURE_COUNT, 0)
         val message = output.getString(ExportWorker.KEY_MESSAGE)
-            ?: if (info.state == WorkInfo.State.SUCCEEDED) "저장이 완료되었습니다." else "저장 작업이 실패했습니다."
+            ?: if (info.state == WorkInfo.State.SUCCEEDED) {
+                "저장이 완료되었습니다."
+            } else {
+                "[KX-SAVE-901] 백그라운드 저장 작업이 중단되었습니다. 오류 코드를 알려 주세요."
+            }
         val photoIds = output.getString(ExportWorker.KEY_PHOTO_IDS)?.toStringList().orEmpty()
         val failedIds = output.getString(ExportWorker.KEY_FAILED_IDS)?.toStringList().orEmpty().toSet()
         val savedIds = output.getString(ExportWorker.KEY_SAVED_IDS)?.toStringList().orEmpty().toSet()
@@ -2772,7 +2777,7 @@ class KeyxifViewModel(
                         photo.id in failedIds -> photo.copy(
                             renderStatus = RenderStatus.Error,
                             errorMessage = failureDetails?.optString(photo.id)?.takeIf(String::isNotBlank)
-                                ?: "백그라운드 저장 실패",
+                                ?: "[KX-SAVE-901] 백그라운드 저장 작업이 중단되었습니다.",
                         )
                         photo.id in savedIds -> photo.copy(renderStatus = RenderStatus.Saved, errorMessage = null)
                         info.state != WorkInfo.State.SUCCEEDED &&

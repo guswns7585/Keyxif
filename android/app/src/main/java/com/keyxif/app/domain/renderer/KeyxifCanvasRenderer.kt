@@ -59,6 +59,7 @@ class KeyxifCanvasRenderer(
         settings: AppSettings = AppSettings(),
         maxLongSide: Int = BitmapUtils.SAVE_LONG_SIDE_LIMIT,
         customTemplate: CustomTemplate? = null,
+        useRenderCache: Boolean = true,
     ): Bitmap {
         val source = BitmapUtils.decodeOrientedBitmap(context, photo.uri, maxLongSide)
         var output: Bitmap? = null
@@ -147,7 +148,11 @@ class KeyxifCanvasRenderer(
             val assets = RenderAssets(
                 logoBitmap = logoBitmap,
                 sourcePhotoBitmap = source,
-                sourceCacheKey = "${photo.uri}|${source.width}x${source.height}",
+                sourceCacheKey = if (useRenderCache) {
+                    "${photo.uri}|${source.width}x${source.height}"
+                } else {
+                    null
+                },
                 whiteLogoBitmap = whiteLogoBitmap,
                 blackLogoBitmap = blackLogoBitmap,
                 logoLabel = logoLabel,

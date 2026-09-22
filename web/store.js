@@ -81,7 +81,7 @@
   var MOBILE_EXPORT_PIXEL_LIMIT = 12000000;
   var DESKTOP_EXPORT_PIXEL_LIMIT = 24000000;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.1.2-web';
+  var VERSION = '1.1.3-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */

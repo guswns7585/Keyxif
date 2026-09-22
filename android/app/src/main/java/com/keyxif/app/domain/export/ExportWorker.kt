@@ -99,9 +99,15 @@ class ExportWorker(
                     true
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
-                    Log.e(TAG, "Export failed for photo ${photo.id}", error)
+                    val failureInfo = exportFailureInfo(error)
+                    Log.e(
+                        TAG,
+                        "Export failed code=${failureInfo.code.value} photo=${photo.id} " +
+                            "template=${payload.template.name} format=${payload.settings.outputFormat.name}",
+                        error,
+                    )
                     if (failureDetails.length() < MAX_FAILURE_DETAILS) {
-                        failureDetails.put(photo.id, exportFailureMessage(error))
+                        failureDetails.put(photo.id, failureInfo.userMessage)
                     }
                     false
                 }
@@ -120,6 +126,10 @@ class ExportWorker(
             val message = buildString {
                 append("저장 완료: 성공 ${success}장, 실패 ${failure}장")
                 if (reducedCount > 0) append(" · ${reducedCount}장은 메모리 보호를 위해 해상도를 낮췄습니다.")
+                if (failure > 0) {
+                    val firstFailure = failedIds.firstOrNull()?.let(failureDetails::optString).orEmpty()
+                    if (firstFailure.isNotBlank()) append(" · $firstFailure")
+                }
             }
             setProgress(progressData(current, total, success, failure, message))
             postCompletionNotification(success, failure, message)
@@ -154,7 +164,7 @@ class ExportWorker(
                 return savePhoto(photo, index, payload, limit)
                     .copy(resolutionReduced = attempt > 0)
             } catch (error: ExportStageException) {
-                if (error.cause !is OutOfMemoryError || attempt == limits.lastIndex) throw error
+                if (!shouldRetryAtLowerResolution(error) || attempt == limits.lastIndex) throw error
                 Log.w(TAG, "Retrying export at lower resolution for photo ${photo.id}", error)
             }
         }
@@ -177,6 +187,7 @@ class ExportWorker(
                     settings = payload.settings,
                     maxLongSide = maxLongSide,
                     customTemplate = payload.customTemplate,
+                    useRenderCache = false,
                 )
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
@@ -184,22 +195,22 @@ class ExportWorker(
             }
             renderedBitmap = bitmap
             val name = FileNameUtils.outputName(photo.buildInfo, index, payload.settings)
-            val uri = try {
+            val savedImage = try {
                 exporter.saveImage(applicationContext, bitmap, name, payload.settings)
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
                 throw ExportStageException(ExportStage.Save, error)
             }
             SavedExportResult(
-                uri = uri,
+                uri = savedImage.uri,
                 exportedImage = ExportedImage(
                     id = "${System.currentTimeMillis()}-${photo.id}-$index",
-                    uri = uri.toString(),
-                    fileName = name,
+                    uri = savedImage.uri.toString(),
+                    fileName = savedImage.displayName,
                     createdAt = System.currentTimeMillis(),
                     width = bitmap.width,
                     height = bitmap.height,
-                    fileSizeBytes = savedFileSize(uri),
+                    fileSizeBytes = savedFileSize(savedImage.uri),
                     templateName = payload.customTemplate?.name ?: payload.template.name,
                     housing = photo.buildInfo.housing.meaningfulBuildTextOrNull(),
                     switchName = photo.buildInfo.switchName.meaningfulBuildTextOrNull(),

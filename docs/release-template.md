@@ -1,14 +1,14 @@
 ## Keyxif Release
 
 ### Changes
-- Add the Liquid Glass Frame template on Android and Web with adaptive refraction, blur, highlights, readable text, and uncropped photo rendering.
-- Improve Liquid Glass rendering quality with smoother anti-aliased edges and bilinear fallback sampling.
-- Reuse blur and glass layers to speed up repeated previews without lowering final image quality.
-- Make background exports more reliable with staged failure reporting and memory-aware retries.
-- Preserve shared images safely when restoring or restarting a previous editing session.
-- Copy Photo Picker images and custom logos into app-owned storage before background export.
-- Continue batch saves when an older photo URI is no longer accessible, and safely fall back to the Keyxif logo when a custom logo permission has expired.
-- Synchronize Android and Web version metadata for 1.1.2.
+- Preserve the selected WEBP or PNG format while retrying encoder failures at memory-safe resolutions.
+- Stage encoded output before publishing and recover from OEM-specific MediaStore pending-state behavior.
+- Separate source access, rendering, encoding, temporary storage, and gallery failures with reportable `KX-SAVE` error codes.
+- Avoid retaining Liquid Glass preview caches during final export and release duplicate blur bitmaps promptly.
+- Keep batch exports running when individual photos fail and report the first actionable failure reason.
+- Upgrade WorkManager to the current stable release for more reliable long-running foreground exports.
+- Add MediaStore tests for public output, 40 sequential WEBP saves, and 4K WEBP format preservation.
+- Synchronize Android and Web version metadata for 1.1.3.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

@@ -87,7 +87,10 @@ object LiquidGlassShaderRenderer {
         }
         val created = createMultiPassBlur(source, bounds)
         synchronized(blurCacheLock) {
-            blurCache[key]?.takeUnless(Bitmap::isRecycled)?.let { return it }
+            blurCache[key]?.takeUnless(Bitmap::isRecycled)?.let {
+                created.recycle()
+                return it
+            }
             blurCache[key] = created
             blurCachePixels += created.width.toLong() * created.height
             while (blurCache.size > MAX_BLUR_CACHE_ENTRIES || blurCachePixels > MAX_BLUR_CACHE_PIXELS) {
