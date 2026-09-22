@@ -337,6 +337,7 @@ enum class CardTemplate {
     BottomSpecBar,
     CornerMark,
     PosterMargin,
+    LiquidGlassFrame,
     DarkGlassStrip,
     SideSpecRail,
     TopNameplate,
@@ -368,6 +369,7 @@ fun CardTemplate.displayName(): String = when (this) {
     CardTemplate.BottomSpecBar -> "하단 스펙 바"
     CardTemplate.CornerMark -> "코너 마크"
     CardTemplate.PosterMargin -> "포스터 마진"
+    CardTemplate.LiquidGlassFrame -> "리퀴드 글라스 프레임"
     CardTemplate.DarkGlassStrip -> "다크 글래스 스트립"
     CardTemplate.SideSpecRail -> "사이드 스펙 레일"
     CardTemplate.TopNameplate -> "상단 네임플레이트"
@@ -385,6 +387,7 @@ fun CardTemplate.shortDescription(): String = when (this) {
     CardTemplate.BottomSpecBar -> "아주 얇은 하단 바에 주요 스펙을 배열합니다."
     CardTemplate.CornerMark -> "사진 모서리에 로고와 하우징만 작게 표시합니다."
     CardTemplate.PosterMargin -> "사진집 같은 프레임과 하단 여백을 만듭니다."
+    CardTemplate.LiquidGlassFrame -> "사진 위 네 변을 투명한 컬러 유리 프레임으로 감쌉니다."
     CardTemplate.DarkGlassStrip -> "하단 가장자리에 얇은 반투명 3열 정보를 표시합니다."
     CardTemplate.SideSpecRail -> "오른쪽 외부 레일에 로고와 세부 스펙을 세로로 배치합니다."
     CardTemplate.TopNameplate -> "사진 위쪽 여백에 큰 이름표와 로고를 올립니다."

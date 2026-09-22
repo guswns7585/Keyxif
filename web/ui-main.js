@@ -749,7 +749,7 @@
      ===================================================================== */
   var SKETCH_PALETTE = ['#343A40', '#E8E2D4', '#B7C9BF', '#FF8E68'];
   var SKETCH_CHIP_Y = {
-    ClassicFrame: 0.95, MinimalCaption: 0.96, BottomSpecBar: 0.91, PosterMargin: 0.94,
+    ClassicFrame: 0.95, MinimalCaption: 0.96, BottomSpecBar: 0.91, PosterMargin: 0.94, LiquidGlassFrame: 0.93,
     DarkGlassStrip: 0.94, SideSpecRail: 0.22, TopNameplate: 0.10, MuseumMat: 0.93,
     CompactTicket: 0.93, CleanSignature: 0.96, SoftEditorial: 0.91,
   };
@@ -809,6 +809,21 @@
         ctx.fillRect(0.04 * w, 0.04 * hgt, 0.92 * w, 0.76 * hgt);
         ctx.fillStyle = '#171717'; ctx.fillRect(0.09 * w, 0.87 * hgt, 0.34 * w, 4);
         ctx.fillStyle = '#777777'; ctx.fillRect(0.09 * w, 0.93 * hgt, 0.45 * w, 3);
+        break;
+      case 'LiquidGlassFrame':
+        ctx.fillStyle = 'rgba(184,216,210,0.22)';
+        ctx.fillRect(0, 0, w, 0.06 * hgt);
+        ctx.fillRect(0, 0, 0.06 * w, hgt);
+        ctx.fillRect(0.94 * w, 0, 0.06 * w, hgt);
+        ctx.fillRect(0, 0.81 * hgt, w, 0.19 * hgt);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(0.06 * w, 0.06 * hgt, 0.88 * w, 0.75 * hgt, 8);
+        else ctx.rect(0.06 * w, 0.06 * hgt, 0.88 * w, 0.75 * hgt);
+        ctx.stroke();
+        ctx.fillStyle = '#25302e'; ctx.fillRect(0.10 * w, 0.855 * hgt, 0.28 * w, 3);
+        ctx.fillStyle = '#43524f'; ctx.fillRect(0.10 * w, 0.91 * hgt, 0.48 * w, 2);
+        ctx.fillStyle = '#25302e'; rr(ctx, 0.78 * w, 0.85 * hgt, 0.11 * w, 0.07 * hgt, 4);
         break;
       case 'DarkGlassStrip':
         ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0.88 * hgt, w, 0.12 * hgt);
@@ -987,7 +1002,7 @@
 
     var grid = h('<div class="grid-templates"></div>');
     // enum 순서: Models.kt 표기 순서 (ClassicFrame 먼저 보여주는 게 아니라 enum 순)
-    consts.CARD_TEMPLATES.filter(function (tid) { return tid !== 'LiquidGlassFrame'; }).forEach(function (tid) {
+    consts.CARD_TEMPLATES.forEach(function (tid) {
       var selTpl = (!CUSTOM_TEMPLATE_UI_ENABLED || !state.selectedCustomTemplateId) && state.selectedTemplate === tid;
       var card = h(
         '<button class="tpl-card' + (selTpl ? ' selected' : '') + '">' +

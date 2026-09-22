@@ -78,10 +78,13 @@ class ImageExporter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
+                check(resolver.update(uri, values, null, null) > 0) {
+                    "저장된 이미지의 공개 처리를 완료하지 못했습니다."
+                }
             }
         }.onFailure { error ->
-            resolver.delete(uri, null, null)
+            runCatching { resolver.delete(uri, null, null) }
+                .onFailure(error::addSuppressed)
             throw error
         }
         return uri

@@ -16,12 +16,12 @@
 
   var CARD_TEMPLATES = [
     'PlainExport', 'ClassicFrame', 'MinimalCaption', 'BottomSpecBar', 'CornerMark',
-    'PosterMargin', 'DarkGlassStrip', 'SideSpecRail', 'TopNameplate', 'MuseumMat',
+    'PosterMargin', 'LiquidGlassFrame', 'DarkGlassStrip', 'SideSpecRail', 'TopNameplate', 'MuseumMat',
     'CompactTicket', 'CleanSignature', 'EditorialCover', 'SoftEditorial',
   ];
   var TEMPLATE_NAME = {
     ClassicFrame: '클래식 프레임', MinimalCaption: '미니멀 캡션', BottomSpecBar: '하단 스펙 바',
-    CornerMark: '코너 마크', PosterMargin: '포스터 마진', DarkGlassStrip: '다크 글래스 스트립',
+    CornerMark: '코너 마크', PosterMargin: '포스터 마진', LiquidGlassFrame: '리퀴드 글라스 프레임', DarkGlassStrip: '다크 글래스 스트립',
     SideSpecRail: '사이드 스펙 레일', TopNameplate: '상단 네임플레이트', MuseumMat: '뮤지엄 매트',
     CompactTicket: '컴팩트 티켓', CleanSignature: '클린 시그니처',
     EditorialCover: '에디토리얼 커버', SoftEditorial: '소프트 에디토리얼', PlainExport: 'Plain Export',
@@ -32,6 +32,7 @@
     BottomSpecBar: '아주 얇은 하단 바에 주요 스펙을 배열합니다.',
     CornerMark: '사진 모서리에 로고와 하우징만 작게 표시합니다.',
     PosterMargin: '사진집 같은 프레임과 하단 여백을 만듭니다.',
+    LiquidGlassFrame: '사진 위 네 변을 투명한 컬러 유리 프레임으로 감쌉니다.',
     DarkGlassStrip: '하단 가장자리에 얇은 반투명 3열 정보를 표시합니다.',
     SideSpecRail: '오른쪽 외부 레일에 로고와 세부 스펙을 세로로 배치합니다.',
     TopNameplate: '사진 위쪽 여백에 큰 이름표와 로고를 올립니다.',
@@ -77,8 +78,10 @@
   var MIN_READABLE_CUSTOM_TEMPLATE_TEXT_SIZE = 0.026;
 
   var SAVE_LONG_SIDE_LIMIT = 4096;
+  var MOBILE_EXPORT_PIXEL_LIMIT = 12000000;
+  var DESKTOP_EXPORT_PIXEL_LIMIT = 24000000;
   var PREVIEW_LONG_SIDE_LIMIT = 720;
-  var VERSION = '1.1.1-web';
+  var VERSION = '1.1.2-web';
 
   /* ------------------------------------------------------------------ */
   /* Defaults & normalization (AppSettings — Models.kt)                  */
@@ -832,15 +835,69 @@
   }
 
   // decodeOrientedBitmap 대응: EXIF 보정 + 긴 변 제한 디코드
+  var reducedExportBitmaps = new WeakSet();
+
+  function sourceDimensions(blob) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(blob);
+      var image = new Image();
+      image.onload = function () {
+        var dimensions = { width: image.naturalWidth, height: image.naturalHeight };
+        image.onload = image.onerror = null;
+        image.src = '';
+        URL.revokeObjectURL(url);
+        if (dimensions.width > 0 && dimensions.height > 0) resolve(dimensions);
+        else reject(new Error('이미지 크기를 읽을 수 없습니다.'));
+      };
+      image.onerror = function () {
+        image.onload = image.onerror = null;
+        image.src = '';
+        URL.revokeObjectURL(url);
+        reject(new Error('이미지 크기를 읽을 수 없습니다.'));
+      };
+      image.src = url;
+    });
+  }
+
+  function exportPixelLimit() {
+    var touchOnly = window.matchMedia && window.matchMedia('(hover: none)').matches;
+    return touchOnly ? MOBILE_EXPORT_PIXEL_LIMIT : DESKTOP_EXPORT_PIXEL_LIMIT;
+  }
+
+  function exportTargetDimensions(width, height, maxLongSide, maxPixels) {
+    if (width <= 0 || height <= 0) throw new Error('이미지 크기가 올바르지 않습니다.');
+    var longSideScale = maxLongSide ? maxLongSide / Math.max(width, height) : 1;
+    var pixelScale = Math.sqrt(maxPixels / (width * height));
+    var scale = Math.min(1, longSideScale, pixelScale);
+    return {
+      width: Math.max(1, Math.floor(width * scale)),
+      height: Math.max(1, Math.floor(height * scale)),
+      reducedForMemory: pixelScale < Math.min(1, longSideScale),
+    };
+  }
+
   function decodeBlob(blob, maxLongSide) {
-    return createImageBitmap(blob, { imageOrientation: 'from-image' }).then(function (bmp) {
-      var longest = Math.max(bmp.width, bmp.height);
-      if (!maxLongSide || longest <= maxLongSide) return bmp;
-      var ratio = maxLongSide / longest;
-      var w = Math.max(1, Math.round(bmp.width * ratio));
-      var h = Math.max(1, Math.round(bmp.height * ratio));
-      return createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
-        .then(function (scaled) { bmp.close(); return scaled; });
+    return sourceDimensions(blob).then(function (dimensions) {
+      var target = exportTargetDimensions(dimensions.width, dimensions.height, maxLongSide, exportPixelLimit());
+      var options = { imageOrientation: 'from-image' };
+      if (target.width !== dimensions.width || target.height !== dimensions.height) {
+        options.resizeWidth = target.width;
+        options.resizeHeight = target.height;
+        options.resizeQuality = 'high';
+      }
+      return createImageBitmap(blob, options).catch(function (error) {
+        if (!options.resizeWidth || (error.name !== 'TypeError' && error.name !== 'NotSupportedError')) throw error;
+        return createImageBitmap(blob, { imageOrientation: 'from-image' }).then(function (full) {
+          return createImageBitmap(full, {
+            resizeWidth: options.resizeWidth,
+            resizeHeight: options.resizeHeight,
+            resizeQuality: 'high',
+          }).finally(function () { full.close(); });
+        });
+      }).then(function (bmp) {
+        if (target.reducedForMemory) reducedExportBitmaps.add(bmp);
+        return bmp;
+      });
     });
   }
   function decodeSource(sourceId, maxLongSide) {
@@ -1371,22 +1428,27 @@
       ]).then(function (parts) {
         var bmp = parts[0], assets = parts[1];
         var buildInfo = Object.assign({}, photo.buildInfo, { customLogoImage: assets.customLogoImage || null });
-        var canvas = window.KeyxifRenderer.render({
-          image: bmp, buildInfo: buildInfo, template: template, settings: settings,
-          customTemplate: customTemplate || null,
-          maxLongSide: maxLongSide,
-          renderStyle: photo.renderStyle || defaultRenderStyle(),
-          assets: {
-            logoImage: assets.logoVariants ? null : (assets.logoImage || null),
-            logoVariants: assets.logoVariants,
-            logoColorPolicy: assets.logoColorPolicy,
-            photoOverlayImage: assets.photoOverlayImage || null,
-            logoLabel: assets.logoLabel,
-            paletteColors: assets.paletteColors,
-          },
-        });
-        if (bmp.close) bmp.close();
-        return canvas;
+        try {
+          var canvas = window.KeyxifRenderer.render({
+            image: bmp, buildInfo: buildInfo, template: template, settings: settings,
+            customTemplate: customTemplate || null,
+            maxLongSide: maxLongSide,
+            sourceCacheKey: String(photo.uri || '') + '|' + String(maxLongSide || ''),
+            renderStyle: photo.renderStyle || defaultRenderStyle(),
+            assets: {
+              logoImage: assets.logoVariants ? null : (assets.logoImage || null),
+              logoVariants: assets.logoVariants,
+              logoColorPolicy: assets.logoColorPolicy,
+              photoOverlayImage: assets.photoOverlayImage || null,
+              logoLabel: assets.logoLabel,
+              paletteColors: assets.paletteColors,
+            },
+          });
+          canvas.keyxifReducedForMemory = reducedExportBitmaps.has(bmp);
+          return canvas;
+        } finally {
+          if (bmp.close) bmp.close();
+        }
       });
     });
   }
@@ -1478,6 +1540,11 @@
       if (nativeSupported) {
         return canvasToBlob(canvas, 'WEBP', quality).then(function (blob) {
           return { blob: blob, ext: 'webp' };
+        }).catch(function (error) {
+          console.warn('Keyxif native WebP encoding failed; trying PNG', error);
+          return canvasToBlob(canvas, 'PNG', quality).then(function (blob) {
+            return { blob: blob, ext: 'png' };
+          });
         });
       }
       if (window.KeyxifWebp) {
@@ -1520,6 +1587,52 @@
 
   var exportJobToken = 0;
 
+  function exportErrorMessage(error) {
+    if (error && error.name === 'QuotaExceededError') {
+      return '브라우저 저장 공간이 부족합니다. 사용하지 않는 완성 이미지를 정리해 주세요.';
+    }
+    return '사진 변환 또는 다운로드에 실패했습니다. 출력 해상도와 저장 공간을 확인해 주세요.';
+  }
+
+  function encodeExportWithRetry(item, template, settings, initialLongSide, wantWebp, customTemplate) {
+    var limits = [initialLongSide, Math.min(initialLongSide, 3072),
+      Math.min(initialLongSide, 2048), Math.min(initialLongSide, 1536)]
+      .filter(function (limit, index, all) { return all.indexOf(limit) === index; });
+    var attemptIndex = 0;
+
+    function attempt() {
+      var canvas = null;
+      var limit = limits[attemptIndex];
+      return renderPhotoCanvas(item.snap, template, settings, limit, item.blob, customTemplate)
+        .then(function (rendered) {
+          canvas = rendered;
+          return encodeCanvas(rendered, wantWebp, settings.webpQuality).then(function (encoded) {
+            var thumbnail = null;
+            try { thumbnail = makeThumbnail(rendered); } catch (error) {
+              console.warn('Keyxif export thumbnail failed', error);
+            }
+            return {
+              blob: encoded.blob,
+              ext: encoded.ext,
+              width: rendered.width,
+              height: rendered.height,
+              thumbDataUrl: thumbnail,
+              reducedForMemory: rendered.keyxifReducedForMemory || attemptIndex > 0,
+            };
+          });
+        }).catch(function (error) {
+          if (attemptIndex + 1 >= limits.length) throw error;
+          console.warn('Keyxif export retrying at lower resolution', error);
+          if (canvas) { canvas.width = 0; canvas.height = 0; canvas = null; }
+          attemptIndex++;
+          return attempt();
+        }).finally(function () {
+          if (canvas) { canvas.width = 0; canvas.height = 0; }
+        });
+    }
+    return attempt();
+  }
+
   function enqueueExport(ids) {
     if (!ids || ids.length === 0) { message('저장할 사진이 없습니다.'); return; }
     var targets = ids.map(findPhoto).filter(Boolean);
@@ -1541,7 +1654,9 @@
     emit();
 
     var saveLongSide = s.keepOriginalResolution ? SAVE_LONG_SIDE_LIMIT * 4 : (s.maxLongSidePx || SAVE_LONG_SIDE_LIMIT);
-    var success = 0, failure = 0, failedIds = [];
+    var success = 0, failure = 0, archiveFailure = 0, reducedCount = 0;
+    var failedIds = [], savedIds = [];
+    var failureMessages = {};
     var dirLabel = 'Pictures/' + (sanitizeName(s.saveDirectoryName) || 'Keyxif');
 
     // 스냅샷 단계 (spec §47: 원본 바이트를 내구화한 페이로드) — 이후 removePhoto/
@@ -1582,37 +1697,41 @@
             };
             photo.renderStatus = 'Rendering';
             emit();
-            return renderPhotoCanvas(item.snap, template, s, saveLongSide, item.blob, customTemplate).then(function (canvas) {
-              return encodeCanvas(canvas, wantWebp, s.webpQuality).then(function (encoded) {
+            return encodeExportWithRetry(item, template, s, saveLongSide, wantWebp, customTemplate).then(function (encoded) {
                 if (token !== exportJobToken) return; // 부수효과(다운로드/기록) 직전 재확인
                 var blob = encoded.blob;
                 var ext = encoded.ext;
                 var fileName = outputFileName(item.snap.buildInfo, fileIndex, s, ext);
                 downloadBlob(blob, fileName);
+                success++;
+                if (encoded.reducedForMemory) reducedCount++;
+                savedIds.push(photo.id);
+                photo.renderStatus = 'Saved'; photo.errorMessage = null;
                 var m = U().meaningfulBuildTextOrNull;
-                var record = {
-                  id: Date.now() + '-' + photo.id + '-' + fileIndex,
-                  uri: '', fileName: fileName, createdAt: Date.now(),
-                  width: canvas.width, height: canvas.height,
-                  fileSizeBytes: blob.size, templateName: customTemplate ? customTemplate.name : template,
-                  housing: m(item.snap.buildInfo.housing), switchName: m(item.snap.buildInfo.switchName),
-                  keycap: m(item.snap.buildInfo.keycap), nickname: m(item.snap.buildInfo.nickname),
-                  paletteColors: item.snap.analysisResult.paletteColors.slice(),
-                  thumbDataUrl: makeThumbnail(canvas), blob: blob,
-                };
-                return window.KeyxifDB.putExported(record).then(function () {
-                  if (token !== exportJobToken) return;
-                  success++;
-                  photo.renderStatus = 'Saved'; photo.errorMessage = null;
-                  return refreshExported();
+                return Promise.resolve().then(function () {
+                  var record = {
+                    id: Date.now() + '-' + photo.id + '-' + fileIndex,
+                    uri: '', fileName: fileName, createdAt: Date.now(),
+                    width: encoded.width, height: encoded.height,
+                    fileSizeBytes: blob.size, templateName: customTemplate ? customTemplate.name : template,
+                    housing: m(item.snap.buildInfo.housing), switchName: m(item.snap.buildInfo.switchName),
+                    keycap: m(item.snap.buildInfo.keycap), nickname: m(item.snap.buildInfo.nickname),
+                    paletteColors: item.snap.analysisResult.paletteColors.slice(),
+                    thumbDataUrl: encoded.thumbDataUrl, blob: blob,
+                  };
+                  return window.KeyxifDB.putExported(record).then(refreshExported);
+                }).catch(function (error) {
+                  archiveFailure++;
+                  console.warn('Keyxif export gallery record failed', error);
                 });
-              });
             }).catch(function (err) {
               if (token !== exportJobToken) return;
               failure++;
               failedIds.push(photo.id);
               photo.renderStatus = 'Error';
-              photo.errorMessage = '백그라운드 저장 실패';
+              failureMessages[photo.id] = exportErrorMessage(err);
+              photo.errorMessage = failureMessages[photo.id];
+              console.error('Keyxif export failed', err);
               emit();
             });
           });
@@ -1621,16 +1740,21 @@
         return chain.then(function () {
           if (token !== exportJobToken) return;
           var finalMsg = '저장 완료: 성공 ' + success + '장, 실패 ' + failure + '장';
+          if (archiveFailure > 0) {
+            finalMsg += ' · ' + archiveFailure + '장의 완성 이미지 갤러리 갱신이 실패했습니다.';
+          }
+          if (reducedCount > 0) {
+            finalMsg += ' · ' + reducedCount + '장은 메모리 보호를 위해 해상도를 낮췄습니다.';
+          }
           state.exportProgress = {
             isSaving: false, current: total, total: total,
             successCount: success, failureCount: failure,
-            message: s.showSaveToast ? finalMsg : null,
+            message: s.showSaveToast || failure > 0 || archiveFailure > 0 || reducedCount > 0 ? finalMsg : null,
           };
-          // spec §47 완료 전이: failedIds → Error(+고정 메시지), 그 외 → Saved
-          // (skipFailedOnBatchSave=false 조기 중단으로 건너뛴 사진도 Saved — 안드로이드 동작 그대로)
           targets.forEach(function (p) {
-            if (failedIds.indexOf(p.id) >= 0) { p.renderStatus = 'Error'; p.errorMessage = '백그라운드 저장 실패'; }
-            else { p.renderStatus = 'Saved'; p.errorMessage = null; }
+            if (failedIds.indexOf(p.id) >= 0) { p.renderStatus = 'Error'; p.errorMessage = failureMessages[p.id]; }
+            else if (savedIds.indexOf(p.id) >= 0) { p.renderStatus = 'Saved'; p.errorMessage = null; }
+            else { p.renderStatus = 'Idle'; p.errorMessage = null; }
           });
           if (s.openGalleryAfterSave && success > 0) {
             state.isGalleryOpen = true; state.isSettingsOpen = false; state.settingsPageName = null;
@@ -1640,7 +1764,7 @@
       });
     }).catch(function (err) {
       if (token !== exportJobToken) return;
-      targets.forEach(function (p) { p.renderStatus = 'Error'; p.errorMessage = '백그라운드 저장 실패'; });
+      targets.forEach(function (p) { p.renderStatus = 'Error'; p.errorMessage = exportErrorMessage(err); });
       state.exportProgress = {
         isSaving: false, current: 0, total: total, successCount: 0, failureCount: total,
         message: (err && err.message) || '저장 작업을 준비할 수 없습니다.',
@@ -2915,6 +3039,7 @@
           .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
       },
       meaningful: function (s) { return U().meaningfulBuildTextOrNull(s); },
+      exportTargetDimensions: exportTargetDimensions,
       VERSION: VERSION,
     },
     consts: {

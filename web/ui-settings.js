@@ -452,7 +452,7 @@
       var rows = [];
       rows.push(chipRow({
         label: '기본 템플릿',
-        chips: C.CARD_TEMPLATES.filter(function (t) { return t !== 'LiquidGlassFrame'; }).map(function (t) {
+        chips: C.CARD_TEMPLATES.map(function (t) {
           return { label: C.TEMPLATE_NAME[t], value: t, selected: s.defaultTemplate === t };
         }),
         onSelect: function (v) { up(function (st) { st.defaultTemplate = v; }); },

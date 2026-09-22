@@ -115,6 +115,23 @@ fun TemplatePreviewCard(
                             drawRect(Color(0xFF171717), Offset(w * 0.09f, h * 0.87f), Size(w * 0.34f, 4f))
                             drawRect(Color(0xFF777777), Offset(w * 0.09f, h * 0.93f), Size(w * 0.45f, 3f))
                         }
+                        CardTemplate.LiquidGlassFrame -> {
+                            val glass = Color(0xFFB8D8D2).copy(alpha = 0.22f)
+                            drawRect(glass, Offset.Zero, Size(w, h * 0.06f))
+                            drawRect(glass, Offset.Zero, Size(w * 0.06f, h))
+                            drawRect(glass, Offset(w * 0.94f, 0f), Size(w * 0.06f, h))
+                            drawRect(glass, Offset(0f, h * 0.81f), Size(w, h * 0.19f))
+                            drawRoundRect(
+                                Color.White.copy(alpha = 0.35f),
+                                Offset(w * 0.06f, h * 0.06f),
+                                Size(w * 0.88f, h * 0.75f),
+                                CornerRadius(8f, 8f),
+                                style = Stroke(width = 0.8f),
+                            )
+                            drawRect(Color(0xFF25302E), Offset(w * 0.10f, h * 0.855f), Size(w * 0.28f, 3f))
+                            drawRect(Color(0xFF43524F), Offset(w * 0.10f, h * 0.91f), Size(w * 0.48f, 2f))
+                            drawRoundRect(Color(0xFF25302E), Offset(w * 0.78f, h * 0.85f), Size(w * 0.11f, h * 0.07f), CornerRadius(4f, 4f))
+                        }
                         CardTemplate.DarkGlassStrip -> {
                             drawRect(Color.Black.copy(alpha = 0.7f), Offset(0f, h * 0.88f), Size(w, h * 0.12f))
                             drawRoundRect(Color.White, Offset(w * 0.05f, h * 0.91f), Size(w * 0.11f, h * 0.06f), CornerRadius(4f, 4f))
@@ -268,6 +285,7 @@ private val palettePreviewTemplates = setOf(
     CardTemplate.MinimalCaption,
     CardTemplate.BottomSpecBar,
     CardTemplate.PosterMargin,
+    CardTemplate.LiquidGlassFrame,
     CardTemplate.DarkGlassStrip,
     CardTemplate.SideSpecRail,
     CardTemplate.TopNameplate,
@@ -297,6 +315,7 @@ private fun DrawScope.drawPreviewPaletteChips(
         CardTemplate.MinimalCaption,
         CardTemplate.BottomSpecBar,
         CardTemplate.PosterMargin,
+        CardTemplate.LiquidGlassFrame,
         CardTemplate.DarkGlassStrip,
         CardTemplate.TopNameplate,
         CardTemplate.MuseumMat,
@@ -311,6 +330,7 @@ private fun DrawScope.drawPreviewPaletteChips(
         CardTemplate.MinimalCaption -> h * 0.96f
         CardTemplate.BottomSpecBar -> h * 0.91f
         CardTemplate.PosterMargin -> h * 0.94f
+        CardTemplate.LiquidGlassFrame -> h * 0.93f
         CardTemplate.DarkGlassStrip -> h * 0.94f
         CardTemplate.SideSpecRail -> h * 0.22f
         CardTemplate.TopNameplate -> h * 0.10f

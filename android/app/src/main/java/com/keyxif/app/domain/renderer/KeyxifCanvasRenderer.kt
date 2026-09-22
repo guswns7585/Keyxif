@@ -40,6 +40,7 @@ class KeyxifCanvasRenderer(
         CardTemplate.BottomSpecBar to BottomSpecBarRenderer(),
         CardTemplate.CornerMark to CornerMarkRenderer(),
         CardTemplate.PosterMargin to PosterMarginRenderer(),
+        CardTemplate.LiquidGlassFrame to LiquidGlassFrameRenderer(),
         CardTemplate.DarkGlassStrip to DarkGlassStripRenderer(),
         CardTemplate.SideSpecRail to SideSpecRailRenderer(),
         CardTemplate.TopNameplate to TopNameplateRenderer(),
@@ -145,12 +146,16 @@ class KeyxifCanvasRenderer(
             val hasLogo = logoBitmap != null || logoLabel.isMeaningfulBuildText()
             val assets = RenderAssets(
                 logoBitmap = logoBitmap,
+                sourcePhotoBitmap = source,
+                sourceCacheKey = "${photo.uri}|${source.width}x${source.height}",
                 whiteLogoBitmap = whiteLogoBitmap,
                 blackLogoBitmap = blackLogoBitmap,
                 logoLabel = logoLabel,
                 paletteColors = photo.analysisResult.paletteColors,
                 hasLogo = hasLogo,
                 cardBackgroundColor = cardBackgroundColor,
+                hasExplicitCardBackgroundColor = settings.showPaletteColors &&
+                    photo.renderStyle.usePaletteColorForCardBackground,
                 cardContentColor = if (settings.showPaletteColors && photo.renderStyle.usePaletteColorForText) {
                     photo.renderStyle.customTextColor
                         ?: photo.analysisResult.paletteColors

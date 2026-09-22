@@ -1,9 +1,13 @@
 package com.keyxif.app.domain.renderer
 
 import android.graphics.Canvas
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import com.keyxif.app.domain.model.AppSettings
 import com.keyxif.app.domain.model.BuildInfoRow
 import com.keyxif.app.domain.model.KeyboardBuildInfo
@@ -334,6 +338,497 @@ class PosterMarginRenderer : TemplateRenderer {
             strokeColor = Color.argb(70, 0, 0, 0),
             alignment = PaletteChipAlignment.Start,
         )
+    }
+}
+
+class LiquidGlassFrameRenderer : TemplateRenderer {
+    override fun backgroundColor(): Int = Color.rgb(226, 229, 228)
+    override fun logoBackgroundTone(): TemplateBackgroundTone = TemplateBackgroundTone.Mixed
+
+    override fun draw(canvas: Canvas, bounds: RectF, info: KeyboardBuildInfo, assets: RenderAssets, settings: AppSettings) {
+        val w = bounds.width()
+        val h = bounds.height()
+        val unit = min(w, h)
+        val sideWidth = unit * 0.058f
+        val topWidth = unit * 0.056f
+        val bottomHeight = max(h * 0.145f, unit * 0.12f)
+        val outer = RectF(0f, 0f, w, h)
+        val inner = RectF(
+            outer.left + sideWidth,
+            outer.top + topWidth,
+            outer.right - sideWidth,
+            outer.bottom - bottomHeight,
+        )
+        val outerRadius = 0f
+        val innerRadius = unit * 0.025f
+        val contentColor = if (assets.hasExplicitTextColor) assets.cardContentColor else Color.WHITE
+        val scrimBase = if (CanvasRenderUtils.relativeLuminance(contentColor) >= 0.18) Color.BLACK else Color.WHITE
+        val ring = Path().apply {
+            fillType = Path.FillType.EVEN_ODD
+            addRoundRect(outer, outerRadius, outerRadius, Path.Direction.CW)
+            addRoundRect(inner, innerRadius, innerRadius, Path.Direction.CW)
+        }
+
+        val saveCount = canvas.save()
+        canvas.clipPath(ring)
+        assets.sourcePhotoBitmap?.let { source ->
+            val shaderRendered = LiquidGlassShaderRenderer.drawIfSupported(
+                canvas = canvas,
+                source = source,
+                sourceCacheKey = assets.sourceCacheKey,
+                bounds = bounds,
+                inner = inner,
+                innerRadius = innerRadius,
+            )
+            if (!shaderRendered) {
+                val cachedLayer = LiquidGlassFallbackLayerCache.getOrCreate(
+                    sourceCacheKey = assets.sourceCacheKey,
+                    outputWidth = w.toInt(),
+                    outputHeight = h.toInt(),
+                    inner = inner,
+                    innerRadius = innerRadius,
+                ) {
+                    createLiquidGlassLayer(
+                        source = source,
+                        outputWidth = w.toInt(),
+                        outputHeight = h.toInt(),
+                        inner = inner,
+                        innerRadius = innerRadius,
+                    )
+                }
+                try {
+                    canvas.drawBitmap(
+                        cachedLayer.bitmap,
+                        null,
+                        bounds,
+                        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
+                            alpha = 220
+                        },
+                    )
+                } finally {
+                    if (cachedLayer.ownedByCaller) cachedLayer.bitmap.recycle()
+                }
+            }
+        }
+        if (assets.hasExplicitCardBackgroundColor) {
+            val tint = assets.cardBackgroundColor
+            canvas.drawRect(
+                bounds,
+                CanvasRenderUtils.paint(
+                    Color.argb(30, Color.red(tint), Color.green(tint), Color.blue(tint)),
+                    1f,
+                ),
+            )
+        }
+        val sheen = LinearGradient(
+            outer.left,
+            outer.top,
+            outer.right,
+            outer.bottom,
+            intArrayOf(
+                Color.argb(20, 255, 255, 255),
+                Color.TRANSPARENT,
+                Color.argb(12, 0, 0, 0),
+            ),
+            floatArrayOf(0f, 0.48f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawRect(bounds, Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = sheen })
+        canvas.restoreToCount(saveCount)
+        val contentLeft = inner.left + unit * 0.015f
+        val contentTop = inner.bottom + bottomHeight * 0.20f
+        val contentRight = inner.right - unit * 0.015f
+        val logoWidth = min(w * 0.16f, bottomHeight * 1.12f)
+        val logoBox = RectF(
+            contentRight - logoWidth,
+            contentTop,
+            contentRight,
+            outer.bottom - bottomHeight * 0.18f,
+        )
+        val logoColor = if (scrimBase == Color.BLACK) Color.WHITE else Color.rgb(18, 19, 18)
+        val logoActual = drawLogoIfPresent(canvas, logoBox, assets.withLogoContrast(logoColor), logoColor, LogoAnchor.End, LogoFitMode.Inside)
+        val textRight = (logoActual?.left?.minus(unit * 0.022f)) ?: contentRight
+        val title = info.displayTitleOrNull()
+        val details = detailTextExcluding(title, info.housing, info.switchName, info.plate, info.mount, info.keycap)
+        val titlePaint = medium(scaled(h * 0.025f, settings), contentColor)
+        val detailPaint = regular(scaled(h * 0.0135f, settings), contentColor)
+        title?.let {
+            drawLiquidGlassText(
+                canvas = canvas,
+                text = it,
+                x = contentLeft,
+                baseline = contentTop + titlePaint.textSize,
+                paint = titlePaint,
+                maxWidth = textRight - contentLeft,
+                contrastColor = scrimBase,
+                unit = unit,
+                isDetail = false,
+            )
+        }
+        if (details.isNotBlank()) {
+            val detailY = contentTop + if (title == null) detailPaint.textSize * 1.15f else titlePaint.textSize * 1.78f
+            drawLiquidGlassText(
+                canvas = canvas,
+                text = details,
+                x = contentLeft,
+                baseline = detailY,
+                paint = detailPaint,
+                maxWidth = textRight - contentLeft,
+                contrastColor = scrimBase,
+                unit = unit,
+                isDetail = true,
+            )
+        }
+        CanvasRenderUtils.drawPaletteChipsInRect(
+            canvas = canvas,
+            colors = CanvasRenderUtils.visiblePaletteColors(assets, settings),
+            area = RectF(contentLeft, outer.bottom - bottomHeight * 0.30f, textRight, outer.bottom - bottomHeight * 0.10f),
+            chipSize = bottomHeight * 0.095f,
+            gap = bottomHeight * 0.048f,
+            strokeColor = Color.argb(84, Color.red(contentColor), Color.green(contentColor), Color.blue(contentColor)),
+            alignment = PaletteChipAlignment.Start,
+        )
+    }
+}
+
+private object LiquidGlassFallbackLayerCache {
+    private const val MAX_CACHE_PIXELS = 6_000_000L
+    private const val MAX_CACHE_ENTRIES = 8
+    private val lock = Any()
+    private val cache = java.util.LinkedHashMap<String, Bitmap>(12, 0.75f, true)
+    private var cachedPixels = 0L
+
+    data class Result(val bitmap: Bitmap, val ownedByCaller: Boolean)
+
+    fun getOrCreate(
+        sourceCacheKey: String?,
+        outputWidth: Int,
+        outputHeight: Int,
+        inner: RectF,
+        innerRadius: Float,
+        create: () -> Bitmap,
+    ): Result {
+        val key = sourceCacheKey?.let {
+            listOf(
+                it,
+                outputWidth,
+                outputHeight,
+                inner.left.toInt(),
+                inner.top.toInt(),
+                inner.right.toInt(),
+                inner.bottom.toInt(),
+                innerRadius.toInt(),
+            ).joinToString("|")
+        } ?: return Result(create(), ownedByCaller = true)
+        synchronized(lock) {
+            cache[key]?.takeUnless(Bitmap::isRecycled)?.let {
+                return Result(it, ownedByCaller = false)
+            }
+        }
+        val created = create()
+        synchronized(lock) {
+            cache[key]?.takeUnless(Bitmap::isRecycled)?.let {
+                created.recycle()
+                return Result(it, ownedByCaller = false)
+            }
+            cache[key] = created
+            cachedPixels += created.width.toLong() * created.height
+            while (cache.size > MAX_CACHE_ENTRIES || cachedPixels > MAX_CACHE_PIXELS) {
+                val eldest = cache.entries.iterator().next()
+                cache.remove(eldest.key)
+                cachedPixels -= eldest.value.width.toLong() * eldest.value.height
+            }
+        }
+        return Result(created, ownedByCaller = false)
+    }
+}
+
+private fun drawLiquidGlassText(
+    canvas: Canvas,
+    text: String,
+    x: Float,
+    baseline: Float,
+    paint: Paint,
+    maxWidth: Float,
+    contrastColor: Int,
+    unit: Float,
+    isDetail: Boolean,
+) {
+    val safeText = CanvasRenderUtils.ellipsize(text, paint, maxWidth)
+    if (safeText.isBlank()) return
+
+    val outline = Paint(paint).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = max(1f, unit * if (isDetail) 0.0009f else 0.00075f)
+        strokeJoin = Paint.Join.ROUND
+        color = Color.argb(
+            if (isDetail) 118 else 98,
+            Color.red(contrastColor),
+            Color.green(contrastColor),
+            Color.blue(contrastColor),
+        )
+        clearShadowLayer()
+    }
+    canvas.drawText(safeText, x, baseline, outline)
+
+    val shadowOffset = unit * if (contrastColor == Color.BLACK) 0.0011f else -0.0007f
+    val fill = Paint(paint).apply {
+        style = Paint.Style.FILL
+        setShadowLayer(
+            unit * if (isDetail) 0.0032f else 0.0042f,
+            0f,
+            shadowOffset,
+            Color.argb(
+                if (isDetail) 158 else 142,
+                Color.red(contrastColor),
+                Color.green(contrastColor),
+                Color.blue(contrastColor),
+            ),
+        )
+    }
+    canvas.drawText(safeText, x, baseline, fill)
+}
+
+private fun createLiquidGlassLayer(
+    source: Bitmap,
+    outputWidth: Int,
+    outputHeight: Int,
+    inner: RectF,
+    innerRadius: Float,
+): Bitmap {
+    val sampleScale = min(1f, 1200f / max(outputWidth, outputHeight).coerceAtLeast(1))
+    val sampleWidth = max(1, (outputWidth * sampleScale).toInt())
+    val sampleHeight = max(1, (outputHeight * sampleScale).toInt())
+    val sampled = Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888)
+    Canvas(sampled).drawBitmap(
+        source,
+        null,
+        RectF(0f, 0f, sampleWidth.toFloat(), sampleHeight.toFloat()),
+        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG),
+    )
+
+    val pixels = IntArray(sampleWidth * sampleHeight)
+    sampled.getPixels(pixels, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
+    val radius = (min(sampleWidth, sampleHeight) / 90).coerceIn(3, 16)
+    val horizontal = IntArray(pixels.size)
+    val blurred = IntArray(pixels.size)
+    var blurSource = pixels
+    repeat(3) {
+        blurRows(blurSource, horizontal, sampleWidth, sampleHeight, radius)
+        blurColumns(horizontal, blurred, sampleWidth, sampleHeight, radius)
+        blurSource = blurred
+    }
+    val glass = IntArray(pixels.size)
+    val scaleX = sampleWidth.toFloat() / outputWidth.coerceAtLeast(1)
+    val scaleY = sampleHeight.toFloat() / outputHeight.coerceAtLeast(1)
+    val left = inner.left * scaleX
+    val top = inner.top * scaleY
+    val right = inner.right * scaleX
+    val bottom = inner.bottom * scaleY
+    val roundedRadius = innerRadius * min(scaleX, scaleY)
+    val centerX = (left + right) * 0.5f
+    val centerY = (top + bottom) * 0.5f
+    val halfX = max(0f, (right - left) * 0.5f - roundedRadius)
+    val halfY = max(0f, (bottom - top) * 0.5f - roundedRadius)
+    val edgeBand = (min(sampleWidth, sampleHeight) * 0.026f).coerceAtLeast(5f)
+    val maxShift = (min(sampleWidth, sampleHeight) * 0.024f).coerceAtLeast(4f)
+    val chromaShift = (min(sampleWidth, sampleHeight) * 0.0012f).coerceIn(0.45f, 1.2f)
+
+    for (y in 0 until sampleHeight) {
+        for (x in 0 until sampleWidth) {
+            val index = y * sampleWidth + x
+            val base = blendColors(blurred[index], pixels[index], 0.50f)
+            val dx = x - centerX
+            val dy = y - centerY
+            val qx = kotlin.math.abs(dx) - halfX
+            val qy = kotlin.math.abs(dy) - halfY
+            val outsideX = max(qx, 0f)
+            val outsideY = max(qy, 0f)
+            val signedDistance = kotlin.math.sqrt(outsideX * outsideX + outsideY * outsideY) + min(max(qx, qy), 0f) - roundedRadius
+            if (signedDistance < 0f || signedDistance > edgeBand) {
+                glass[index] = base
+                continue
+            }
+
+            val signX = if (dx < 0f) -1f else 1f
+            val signY = if (dy < 0f) -1f else 1f
+            val normalX: Float
+            val normalY: Float
+            if (outsideX > 0f && outsideY > 0f) {
+                val length = kotlin.math.sqrt(outsideX * outsideX + outsideY * outsideY).coerceAtLeast(0.0001f)
+                normalX = outsideX / length * signX
+                normalY = outsideY / length * signY
+            } else if (qx > qy) {
+                normalX = signX
+                normalY = 0f
+            } else {
+                normalX = 0f
+                normalY = signY
+            }
+            val t = (1f - signedDistance / edgeBand).coerceIn(0f, 1f)
+            val edgeWeight = t * t * (3f - 2f * t)
+            val shift = maxShift * edgeWeight
+            val sourceX = x - normalX * shift
+            val sourceY = y - normalY * shift
+            val center = sampleBilinear(pixels, sampleWidth, sampleHeight, sourceX, sourceY)
+            val redSample = sampleBilinear(
+                pixels,
+                sampleWidth,
+                sampleHeight,
+                sourceX - normalX * chromaShift,
+                sourceY - normalY * chromaShift,
+            )
+            val blueSample = sampleBilinear(
+                pixels,
+                sampleWidth,
+                sampleHeight,
+                sourceX + normalX * chromaShift,
+                sourceY + normalY * chromaShift,
+            )
+            val refracted = Color.argb(
+                Color.alpha(center),
+                Color.red(redSample),
+                Color.green(center),
+                Color.blue(blueSample),
+            )
+            val detailDifference = (
+                kotlin.math.abs(Color.red(pixels[index]) - Color.red(blurred[index])) +
+                    kotlin.math.abs(Color.green(pixels[index]) - Color.green(blurred[index])) +
+                    kotlin.math.abs(Color.blue(pixels[index]) - Color.blue(blurred[index]))
+                ) / (255f * 3f)
+            val flatBoost = (1f - ((detailDifference - 0.025f) / 0.135f)).coerceIn(0f, 1f)
+            val facingLight = max(normalX * 0.58f + normalY * 0.82f, 0f)
+            val facingShadow = max(normalX * -0.58f + normalY * -0.82f, 0f)
+            val edgePosition = (signedDistance / edgeBand).coerceIn(0f, 1f)
+            val refractionCaustic = smoothStep(0.03f, 0.20f, edgePosition) *
+                (1f - smoothStep(0.28f, 0.64f, edgePosition))
+            val highlightWidth = (1f / edgeBand.coerceAtLeast(1f)).coerceIn(0.012f, 0.10f)
+            val highlightDistance = (edgePosition - 0.145f) / highlightWidth
+            val highlightCaustic = kotlin.math.exp(
+                (-highlightDistance * highlightDistance).toDouble(),
+            ).toFloat()
+            val causticStrength = refractionCaustic *
+                (0.010f + facingLight * facingLight * 0.070f) *
+                (0.72f + flatBoost * 0.28f)
+            val lightAmount =
+                highlightCaustic * facingLight * (0.152f + flatBoost * 0.138f) -
+                    edgeWeight * facingShadow * (0.060f + flatBoost * 0.055f)
+            val litColor = offsetColor(
+                blendColors(base, refracted, 0.90f * edgeWeight),
+                (lightAmount * 255f).toInt(),
+            )
+            val causticTint = blendColors(Color.WHITE, blurred[index], 0.16f)
+            glass[index] = blendColors(litColor, causticTint, causticStrength)
+        }
+    }
+
+    sampled.setPixels(glass, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
+    return sampled
+}
+
+private fun sampleBilinear(source: IntArray, width: Int, height: Int, x: Float, y: Float): Int {
+    val safeX = x.coerceIn(0f, (width - 1).toFloat())
+    val safeY = y.coerceIn(0f, (height - 1).toFloat())
+    val x0 = kotlin.math.floor(safeX).toInt()
+    val y0 = kotlin.math.floor(safeY).toInt()
+    val x1 = min(x0 + 1, width - 1)
+    val y1 = min(y0 + 1, height - 1)
+    val tx = safeX - x0
+    val ty = safeY - y0
+    val topLeft = source[y0 * width + x0]
+    val topRight = source[y0 * width + x1]
+    val bottomLeft = source[y1 * width + x0]
+    val bottomRight = source[y1 * width + x1]
+
+    fun channel(selector: (Int) -> Int): Int {
+        val top = selector(topLeft) + (selector(topRight) - selector(topLeft)) * tx
+        val bottom = selector(bottomLeft) + (selector(bottomRight) - selector(bottomLeft)) * tx
+        return (top + (bottom - top) * ty).toInt().coerceIn(0, 255)
+    }
+
+    return Color.argb(
+        channel(Color::alpha),
+        channel(Color::red),
+        channel(Color::green),
+        channel(Color::blue),
+    )
+}
+
+private fun blendColors(background: Int, foreground: Int, amount: Float): Int {
+    val t = amount.coerceIn(0f, 1f)
+    val inverse = 1f - t
+    return Color.argb(
+        (Color.alpha(background) * inverse + Color.alpha(foreground) * t).toInt(),
+        (Color.red(background) * inverse + Color.red(foreground) * t).toInt(),
+        (Color.green(background) * inverse + Color.green(foreground) * t).toInt(),
+        (Color.blue(background) * inverse + Color.blue(foreground) * t).toInt(),
+    )
+}
+
+private fun offsetColor(color: Int, offset: Int): Int = Color.argb(
+    Color.alpha(color),
+    (Color.red(color) + offset).coerceIn(0, 255),
+    (Color.green(color) + offset).coerceIn(0, 255),
+    (Color.blue(color) + offset).coerceIn(0, 255),
+)
+
+private fun smoothStep(edge0: Float, edge1: Float, value: Float): Float {
+    val t = ((value - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
+
+private fun blurRows(source: IntArray, output: IntArray, width: Int, height: Int, radius: Int) {
+    val prefixA = IntArray(width + 1)
+    val prefixR = IntArray(width + 1)
+    val prefixG = IntArray(width + 1)
+    val prefixB = IntArray(width + 1)
+    for (y in 0 until height) {
+        val row = y * width
+        for (x in 0 until width) {
+            val color = source[row + x]
+            prefixA[x + 1] = prefixA[x] + Color.alpha(color)
+            prefixR[x + 1] = prefixR[x] + Color.red(color)
+            prefixG[x + 1] = prefixG[x] + Color.green(color)
+            prefixB[x + 1] = prefixB[x] + Color.blue(color)
+        }
+        for (x in 0 until width) {
+            val left = max(0, x - radius)
+            val right = min(width - 1, x + radius)
+            val count = right - left + 1
+            output[row + x] = Color.argb(
+                (prefixA[right + 1] - prefixA[left]) / count,
+                (prefixR[right + 1] - prefixR[left]) / count,
+                (prefixG[right + 1] - prefixG[left]) / count,
+                (prefixB[right + 1] - prefixB[left]) / count,
+            )
+        }
+    }
+}
+
+private fun blurColumns(source: IntArray, output: IntArray, width: Int, height: Int, radius: Int) {
+    val prefixA = IntArray(height + 1)
+    val prefixR = IntArray(height + 1)
+    val prefixG = IntArray(height + 1)
+    val prefixB = IntArray(height + 1)
+    for (x in 0 until width) {
+        for (y in 0 until height) {
+            val color = source[y * width + x]
+            prefixA[y + 1] = prefixA[y] + Color.alpha(color)
+            prefixR[y + 1] = prefixR[y] + Color.red(color)
+            prefixG[y + 1] = prefixG[y] + Color.green(color)
+            prefixB[y + 1] = prefixB[y] + Color.blue(color)
+        }
+        for (y in 0 until height) {
+            val top = max(0, y - radius)
+            val bottom = min(height - 1, y + radius)
+            val count = bottom - top + 1
+            output[y * width + x] = Color.argb(
+                (prefixA[bottom + 1] - prefixA[top]) / count,
+                (prefixR[bottom + 1] - prefixR[top]) / count,
+                (prefixG[bottom + 1] - prefixG[top]) / count,
+                (prefixB[bottom + 1] - prefixB[top]) / count,
+            )
+        }
     }
 }
 

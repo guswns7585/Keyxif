@@ -13,6 +13,9 @@ import com.keyxif.app.ui.KeyxifApp
 import com.keyxif.app.ui.KeyxifViewModel
 import com.keyxif.app.ui.theme.KeyxifTheme
 import com.keyxif.app.util.IntentShareUtils
+import java.util.UUID
+
+private const val EXTRA_SHARE_REQUEST_ID = "com.keyxif.app.SHARE_REQUEST_ID"
 
 class MainActivity : ComponentActivity() {
     private lateinit var keyxifViewModel: KeyxifViewModel
@@ -46,9 +49,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleShareIntent(intent: Intent?) {
-        val uris = IntentShareUtils.extractImageUris(intent, contentResolver)
         if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) {
-            keyxifViewModel.addSharedImages(uris)
+            val requestId = intent.getStringExtra(EXTRA_SHARE_REQUEST_ID)
+                ?: UUID.randomUUID().toString().also { intent.putExtra(EXTRA_SHARE_REQUEST_ID, it) }
+            val uris = IntentShareUtils.extractImageUris(intent, contentResolver)
+            keyxifViewModel.addSharedImages(uris, requestId)
         }
     }
 }

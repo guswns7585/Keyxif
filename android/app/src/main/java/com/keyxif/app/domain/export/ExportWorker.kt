@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -30,9 +31,11 @@ import com.keyxif.app.domain.renderer.KeyxifCanvasRenderer
 import com.keyxif.app.util.BitmapUtils
 import com.keyxif.app.util.FileNameUtils
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 
 class ExportWorker(
     appContext: Context,
@@ -51,18 +54,23 @@ class ExportWorker(
         val payload = runCatching {
             ExportWorkPayloadCodec.decode(payloadFile.readText(Charsets.UTF_8))
         }.getOrElse { error ->
+            payloadFile.parentFile?.deleteRecursively()
             return@withContext Result.failure(workDataOf(KEY_MESSAGE to (error.message ?: "저장 요청을 읽을 수 없습니다.")))
         }
         val total = payload.photos.size
         if (total == 0) {
+            payloadFile.parentFile?.deleteRecursively()
             return@withContext Result.failure(workDataOf(KEY_MESSAGE to "저장할 사진이 없습니다."))
         }
 
         var success = 0
         var failure = 0
+        var reducedCount = 0
         var current = 0
         var lastSavedUri: Uri? = null
         val failedIds = mutableListOf<String>()
+        val savedIds = mutableListOf<String>()
+        val failureDetails = JSONObject()
         val photoIds = payload.photos.map { it.id }
 
         try {
@@ -75,19 +83,32 @@ class ExportWorker(
                 setForeground(createForegroundInfo(current, total, success, failure, progressMessage))
                 setProgress(progressData(current, total, success, failure, progressMessage, photo.id))
 
-                val saved = runCatching {
-                    savePhoto(
+                val saved = try {
+                    val result = savePhotoWithMemoryFallback(
                         photo = photo,
                         index = current,
                         payload = payload,
                     )
-                }.onSuccess { result ->
+                    if (result.resolutionReduced) reducedCount++
                     lastSavedUri = result.uri
-                    exportedImageRepository.add(result.exportedImage)
-                }.isSuccess
+                    try {
+                        exportedImageRepository.add(result.exportedImage)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Image saved but gallery index update failed", error)
+                    }
+                    true
+                } catch (error: Throwable) {
+                    if (error is CancellationException) throw error
+                    Log.e(TAG, "Export failed for photo ${photo.id}", error)
+                    if (failureDetails.length() < MAX_FAILURE_DETAILS) {
+                        failureDetails.put(photo.id, exportFailureMessage(error))
+                    }
+                    false
+                }
 
                 if (saved) {
                     success++
+                    savedIds += photo.id
                 } else {
                     failure++
                     failedIds += photo.id
@@ -96,7 +117,10 @@ class ExportWorker(
                 setProgress(progressData(current, total, success, failure, "$current / $total 처리 중", photo.id))
             }
 
-            val message = "저장 완료: 성공 ${success}장, 실패 ${failure}장"
+            val message = buildString {
+                append("저장 완료: 성공 ${success}장, 실패 ${failure}장")
+                if (reducedCount > 0) append(" · ${reducedCount}장은 메모리 보호를 위해 해상도를 낮췄습니다.")
+            }
             setProgress(progressData(current, total, success, failure, message))
             postCompletionNotification(success, failure, message)
             Result.success(
@@ -108,6 +132,8 @@ class ExportWorker(
                     KEY_MESSAGE to message,
                     KEY_PHOTO_IDS to JSONArray(photoIds).toString(),
                     KEY_FAILED_IDS to JSONArray(failedIds).toString(),
+                    KEY_SAVED_IDS to JSONArray(savedIds).toString(),
+                    KEY_FAILURE_DETAILS to failureDetails.toString(),
                     KEY_SAVED_URI to lastSavedUri?.toString(),
                 ),
             )
@@ -116,24 +142,54 @@ class ExportWorker(
         }
     }
 
-    private fun savePhoto(
+    private fun savePhotoWithMemoryFallback(
         photo: PhotoItem,
         index: Int,
         payload: ExportWorkPayload,
     ): SavedExportResult {
+        val requestedLongSide = saveLongSide(payload.settings)
+        val limits = memoryFallbackLimits(requestedLongSide)
+        for ((attempt, limit) in limits.withIndex()) {
+            try {
+                return savePhoto(photo, index, payload, limit)
+                    .copy(resolutionReduced = attempt > 0)
+            } catch (error: ExportStageException) {
+                if (error.cause !is OutOfMemoryError || attempt == limits.lastIndex) throw error
+                Log.w(TAG, "Retrying export at lower resolution for photo ${photo.id}", error)
+            }
+        }
+        error("No export resolution available")
+    }
+
+    private fun savePhoto(
+        photo: PhotoItem,
+        index: Int,
+        payload: ExportWorkPayload,
+        maxLongSide: Int,
+    ): SavedExportResult {
         var renderedBitmap: android.graphics.Bitmap? = null
         return try {
-            val bitmap = renderer.render(
-                context = applicationContext,
-                photo = photo,
-                template = payload.template,
-                settings = payload.settings,
-                maxLongSide = saveLongSide(payload.settings),
-                customTemplate = payload.customTemplate,
-            )
+            val bitmap = try {
+                renderer.render(
+                    context = applicationContext,
+                    photo = photo,
+                    template = payload.template,
+                    settings = payload.settings,
+                    maxLongSide = maxLongSide,
+                    customTemplate = payload.customTemplate,
+                )
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                throw ExportStageException(ExportStage.Render, error)
+            }
             renderedBitmap = bitmap
             val name = FileNameUtils.outputName(photo.buildInfo, index, payload.settings)
-            val uri = exporter.saveImage(applicationContext, bitmap, name, payload.settings)
+            val uri = try {
+                exporter.saveImage(applicationContext, bitmap, name, payload.settings)
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                throw ExportStageException(ExportStage.Save, error)
+            }
             SavedExportResult(
                 uri = uri,
                 exportedImage = ExportedImage(
@@ -267,6 +323,7 @@ class ExportWorker(
     private data class SavedExportResult(
         val uri: Uri,
         val exportedImage: ExportedImage,
+        val resolutionReduced: Boolean = false,
     )
 
     companion object {
@@ -282,7 +339,11 @@ class ExportWorker(
         const val KEY_CURRENT_PHOTO_ID = "current_photo_id"
         const val KEY_PHOTO_IDS = "photo_ids"
         const val KEY_FAILED_IDS = "failed_ids"
+        const val KEY_SAVED_IDS = "saved_ids"
+        const val KEY_FAILURE_DETAILS = "failure_details"
         const val KEY_SAVED_URI = "saved_uri"
+        private const val TAG = "KeyxifExport"
+        private const val MAX_FAILURE_DETAILS = 15
         private const val NOTIFICATION_ID = 2407
 
         fun request(payloadPath: String): OneTimeWorkRequest {

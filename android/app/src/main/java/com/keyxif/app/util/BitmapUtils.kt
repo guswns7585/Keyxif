@@ -51,7 +51,15 @@ object BitmapUtils {
             BitmapFactory.decodeStream(input, null, decodeOptions)
         } ?: error("이미지를 읽을 수 없습니다.")
 
-        return downscaleIfNeeded(applyOrientation(decoded, orientation), maxLongSide)
+        var current = decoded
+        try {
+            current = downscaleIfNeeded(current, maxLongSide)
+            current = applyOrientation(current, orientation)
+            return current
+        } catch (error: Throwable) {
+            if (!current.isRecycled) current.recycle()
+            throw error
+        }
     }
 
     private fun calculateSampleSize(

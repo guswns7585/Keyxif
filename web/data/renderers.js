@@ -129,14 +129,17 @@
     return { r: 0, g: 0, b: 0 };
   }
 
-  function readableContentColor(backgroundColor) {
-    var c = colorToRgb(backgroundColor);
+  function relativeLuminance(color) {
+    var c = colorToRgb(color);
     function linear(channel) {
       var value = channel / 255;
       return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
-    var luminance = 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b);
-    return luminance >= 0.36 ? rgb(20, 21, 20) : COLOR_WHITE;
+    return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b);
+  }
+
+  function readableContentColor(backgroundColor) {
+    return relativeLuminance(backgroundColor) >= 0.36 ? rgb(20, 21, 20) : COLOR_WHITE;
   }
 
   function isDarkColor(backgroundColor) {
@@ -393,6 +396,27 @@
     if (isNotBlank(safeText)) {
       drawText(ctx, safeText, x, baseline, p);
     }
+  }
+
+  function drawLiquidGlassText(ctx, text, x, baseline, p, maxWidth, contrastRgb, unit, isDetail) {
+    var safeText = ellipsize(text, p, maxWidth);
+    if (!isNotBlank(safeText)) return;
+    var contrastPrefix = 'rgba(' + contrastRgb.r + ',' + contrastRgb.g + ',' + contrastRgb.b + ',';
+
+    ctx.save();
+    applyTextPaint(ctx, p);
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(1, unit * (isDetail ? 0.0009 : 0.00075));
+    ctx.strokeStyle = contrastPrefix + (isDetail ? '0.46)' : '0.38)');
+    ctx.strokeText(safeText, x, baseline);
+
+    ctx.shadowColor = contrastPrefix + (isDetail ? '0.62)' : '0.56)');
+    ctx.shadowBlur = unit * (isDetail ? 0.0032 : 0.0042);
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = unit * (contrastRgb.r === 0 ? 0.0011 : -0.0007);
+    ctx.fillText(safeText, x, baseline);
+    ctx.restore();
   }
 
   function roundRectPath(ctx, left, top, right, bottom, radius) {
@@ -1117,6 +1141,600 @@
     },
   });
 
+  function addRoundedRectPath(ctx, rect, radius) {
+    var r = Math.min(radius, rect.width() / 2, rect.height() / 2);
+    ctx.moveTo(rect.left + r, rect.top);
+    ctx.lineTo(rect.right - r, rect.top);
+    ctx.quadraticCurveTo(rect.right, rect.top, rect.right, rect.top + r);
+    ctx.lineTo(rect.right, rect.bottom - r);
+    ctx.quadraticCurveTo(rect.right, rect.bottom, rect.right - r, rect.bottom);
+    ctx.lineTo(rect.left + r, rect.bottom);
+    ctx.quadraticCurveTo(rect.left, rect.bottom, rect.left, rect.bottom - r);
+    ctx.lineTo(rect.left, rect.top + r);
+    ctx.quadraticCurveTo(rect.left, rect.top, rect.left + r, rect.top);
+    ctx.closePath();
+  }
+
+  var liquidGlassBackdropCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var liquidGlassStableCache = typeof Map === 'function' ? new Map() : null;
+  var liquidGlassCacheOrder = [];
+  var liquidGlassCachePixels = 0;
+  var MAX_LIQUID_GLASS_CACHE_PIXELS = 8000000;
+  var MAX_LIQUID_GLASS_CACHE_ENTRIES = 8;
+
+  function releaseLiquidGlassCanvas(canvas) {
+    if (canvas && canvas.__keyxifWebGl) {
+      var loseContext = canvas.__keyxifWebGl.getExtension('WEBGL_lose_context');
+      if (loseContext) loseContext.loseContext();
+      canvas.__keyxifWebGl = null;
+    }
+  }
+
+  function liquidGlassStableKey(sourceCacheKey, cacheKey) {
+    return sourceCacheKey ? sourceCacheKey + '|' + cacheKey : null;
+  }
+
+  function getCachedLiquidGlassCanvas(image, sourceCacheKey, cacheKey) {
+    var stableKey = liquidGlassStableKey(sourceCacheKey, cacheKey);
+    var canvas = stableKey && liquidGlassStableCache ? liquidGlassStableCache.get(stableKey) : null;
+    if (!canvas && liquidGlassBackdropCache) {
+      var imageCache = liquidGlassBackdropCache.get(image);
+      canvas = imageCache ? imageCache[cacheKey] : null;
+    }
+    if (!canvas) return null;
+    liquidGlassCacheOrder = liquidGlassCacheOrder.filter(function (entry) {
+      return entry.canvas !== canvas;
+    });
+    liquidGlassCacheOrder.push({
+      image: stableKey ? null : image,
+      stableKey: stableKey,
+      cacheKey: cacheKey,
+      canvas: canvas,
+      pixels: canvas.width * canvas.height,
+    });
+    return canvas;
+  }
+
+  function cacheLiquidGlassCanvas(image, sourceCacheKey, cacheKey, canvas) {
+    if (!liquidGlassBackdropCache && !liquidGlassStableCache) return;
+    var stableKey = liquidGlassStableKey(sourceCacheKey, cacheKey);
+    var existing = stableKey && liquidGlassStableCache ? liquidGlassStableCache.get(stableKey) : null;
+    if (!stableKey && liquidGlassBackdropCache) {
+      var imageCache = liquidGlassBackdropCache.get(image);
+      if (!imageCache) {
+        imageCache = Object.create(null);
+        liquidGlassBackdropCache.set(image, imageCache);
+      }
+      existing = imageCache[cacheKey] || null;
+      imageCache[cacheKey] = canvas;
+    } else if (stableKey && liquidGlassStableCache) {
+      liquidGlassStableCache.set(stableKey, canvas);
+    }
+    liquidGlassCacheOrder = liquidGlassCacheOrder.filter(function (entry) {
+      if (entry.canvas !== existing && entry.canvas !== canvas) return true;
+      liquidGlassCachePixels -= entry.pixels;
+      return false;
+    });
+    var pixels = canvas.width * canvas.height;
+    liquidGlassCachePixels += pixels;
+    liquidGlassCacheOrder.push({ image: stableKey ? null : image, stableKey: stableKey, cacheKey: cacheKey, canvas: canvas, pixels: pixels });
+    while (
+      liquidGlassCacheOrder.length > MAX_LIQUID_GLASS_CACHE_ENTRIES ||
+      liquidGlassCachePixels > MAX_LIQUID_GLASS_CACHE_PIXELS
+    ) {
+      var expired = liquidGlassCacheOrder.shift();
+      liquidGlassCachePixels -= expired.pixels;
+      if (expired.stableKey && liquidGlassStableCache) {
+        if (liquidGlassStableCache.get(expired.stableKey) === expired.canvas) {
+          liquidGlassStableCache.delete(expired.stableKey);
+        }
+      } else if (liquidGlassBackdropCache && expired.image) {
+        var expiredCache = liquidGlassBackdropCache.get(expired.image);
+        if (expiredCache && expiredCache[expired.cacheKey] === expired.canvas) delete expiredCache[expired.cacheKey];
+      }
+      releaseLiquidGlassCanvas(expired.canvas);
+    }
+  }
+
+  function createMultiPassBlurCanvas(image, width, height, unit) {
+    var current = document.createElement('canvas');
+    current.width = width;
+    current.height = height;
+    var currentCtx = current.getContext('2d');
+    currentCtx.imageSmoothingEnabled = true;
+    currentCtx.imageSmoothingQuality = 'high';
+    currentCtx.drawImage(image, 0, 0, width, height);
+
+    var radii = [unit * 0.0035, unit * 0.006, unit * 0.009];
+    radii.forEach(function (radius) {
+      var previous = current;
+      var next = document.createElement('canvas');
+      next.width = width;
+      next.height = height;
+      var nextCtx = next.getContext('2d');
+      nextCtx.imageSmoothingEnabled = true;
+      nextCtx.imageSmoothingQuality = 'high';
+      radius = Math.max(2, radius);
+      if (typeof nextCtx.filter === 'string') {
+        var padding = Math.ceil(radius * 2.5);
+        var padded = document.createElement('canvas');
+        padded.width = width + padding * 2;
+        padded.height = height + padding * 2;
+        var paddedCtx = padded.getContext('2d');
+        paddedCtx.drawImage(current, padding, padding);
+        paddedCtx.drawImage(current, 0, 0, 1, height, 0, padding, padding, height);
+        paddedCtx.drawImage(current, width - 1, 0, 1, height, padding + width, padding, padding, height);
+        paddedCtx.drawImage(current, 0, 0, width, 1, padding, 0, width, padding);
+        paddedCtx.drawImage(current, 0, height - 1, width, 1, padding, padding + height, width, padding);
+        paddedCtx.drawImage(current, 0, 0, 1, 1, 0, 0, padding, padding);
+        paddedCtx.drawImage(current, width - 1, 0, 1, 1, padding + width, 0, padding, padding);
+        paddedCtx.drawImage(current, 0, height - 1, 1, 1, 0, padding + height, padding, padding);
+        paddedCtx.drawImage(current, width - 1, height - 1, 1, 1, padding + width, padding + height, padding, padding);
+        nextCtx.filter = 'blur(' + radius.toFixed(2) + 'px)';
+        nextCtx.drawImage(padded, -padding, -padding);
+        nextCtx.filter = 'none';
+        padded.width = 0;
+        padded.height = 0;
+      } else {
+        var taps = [
+          [-1, -1, 0.075], [0, -1, 0.125], [1, -1, 0.075],
+          [-1, 0, 0.125], [0, 0, 0.20], [1, 0, 0.125],
+          [-1, 1, 0.075], [0, 1, 0.125], [1, 1, 0.075],
+        ];
+        taps.forEach(function (tap) {
+          nextCtx.globalAlpha = tap[2];
+          nextCtx.drawImage(current, tap[0] * radius, tap[1] * radius, width, height);
+        });
+        nextCtx.globalAlpha = 1;
+      }
+      current = next;
+      currentCtx = nextCtx;
+      previous.width = 0;
+      previous.height = 0;
+    });
+    return current;
+  }
+
+  function renderLiquidGlassWebGl(image, width, height, inner, innerRadius) {
+    var scale = Math.min(1, 1600 / Math.max(width, height));
+    var outputWidth = Math.max(1, Math.round(width * scale));
+    var outputHeight = Math.max(1, Math.round(height * scale));
+    var canvas = document.createElement('canvas');
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+    var gl = canvas.getContext('webgl', {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: true,
+      powerPreference: 'high-performance',
+    });
+    if (!gl) return null;
+    canvas.__keyxifWebGl = gl;
+
+    var vertexSource = [
+      'attribute vec2 position;',
+      'attribute vec2 texCoord;',
+      'varying vec2 uv;',
+      'void main() {',
+      '  uv = texCoord;',
+      '  gl_Position = vec4(position, 0.0, 1.0);',
+      '}',
+    ].join('\n');
+    var fragmentSource = [
+      'precision highp float;',
+      'varying vec2 uv;',
+      'uniform sampler2D image;',
+      'uniform sampler2D blurredImage;',
+      'uniform vec2 resolution;',
+      'uniform vec2 innerCenter;',
+      'uniform vec2 innerHalfSize;',
+      'uniform float innerRadius;',
+      'uniform float bevelWidth;',
+      'uniform float refractionHeight;',
+      'uniform float dispersion;',
+      'float roundedRectSdf(vec2 point, vec2 halfSize, float radius) {',
+      '  vec2 q = abs(point) - halfSize + radius;',
+      '  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - radius;',
+      '}',
+      'vec2 safeUv(vec2 value) {',
+      '  vec2 inset = 0.5 / resolution;',
+      '  return clamp(value, inset, vec2(1.0) - inset);',
+      '}',
+      'vec3 sampleImage(vec2 value) { return texture2D(image, safeUv(value)).rgb; }',
+      'void main() {',
+      '  vec2 fragCoord = uv * resolution;',
+      '  vec2 point = fragCoord - innerCenter;',
+      '  float distance = roundedRectSdf(point, innerHalfSize, innerRadius);',
+      '  float edge = 1.0 - smoothstep(0.0, bevelWidth, max(distance, 0.0));',
+      '  float edgePosition = clamp(max(distance, 0.0) / max(bevelWidth, 0.0001), 0.0, 1.0);',
+      '  float epsilon = 1.25;',
+      '  vec2 gradient = vec2(',
+      '    roundedRectSdf(point + vec2(epsilon, 0.0), innerHalfSize, innerRadius) - roundedRectSdf(point - vec2(epsilon, 0.0), innerHalfSize, innerRadius),',
+      '    roundedRectSdf(point + vec2(0.0, epsilon), innerHalfSize, innerRadius) - roundedRectSdf(point - vec2(0.0, epsilon), innerHalfSize, innerRadius)',
+      '  );',
+      '  vec2 normal = gradient / max(length(gradient), 0.0001);',
+      '  float curvedEdge = edge * edge * (3.0 - 2.0 * edge);',
+      '  float lensProfile = pow(curvedEdge, 1.35);',
+      '  float displacement = refractionHeight * lensProfile;',
+      '  vec2 refractedUv = safeUv(uv - normal * displacement / resolution);',
+      '  vec3 soft = texture2D(blurredImage, refractedUv).rgb;',
+      '  vec3 sharp = sampleImage(refractedUv);',
+      '  float localDetail = length(sharp - soft);',
+      '  float flatBoost = 1.0 - smoothstep(0.025, 0.16, localDetail);',
+      '  float blurAmount = 0.50 - edge * 0.08;',
+      '  vec3 color = mix(sharp, soft, blurAmount);',
+      '  vec2 spectralOffset = normal * dispersion * (0.35 + edge * 0.65) / resolution;',
+      '  color.r = mix(color.r, sampleImage(refractedUv - spectralOffset).r, edge * 0.42);',
+      '  color.b = mix(color.b, sampleImage(refractedUv + spectralOffset).b, edge * 0.42);',
+      '  float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));',
+      '  color += vec3((0.5 - luminance) * 0.055);',
+      '  color = mix(vec3(luminance), color, 1.08);',
+      '  vec2 lightDirection = normalize(vec2(-0.58, -0.82));',
+      '  float facingLight = max(dot(-normal, lightDirection), 0.0);',
+      '  float facingShadow = max(dot(normal, lightDirection), 0.0);',
+      '  float shadowBand = 1.0 - smoothstep(0.22, 0.92, edgePosition);',
+      '  float refractionCaustic = smoothstep(0.03, 0.20, edgePosition) * (1.0 - smoothstep(0.28, 0.64, edgePosition));',
+      '  float highlightWidth = clamp(1.0 / max(bevelWidth, 1.0), 0.012, 0.10);',
+      '  float highlightDistance = (edgePosition - 0.145) / highlightWidth;',
+      '  float highlightCaustic = exp(-highlightDistance * highlightDistance);',
+      '  float causticStrength = refractionCaustic * (0.010 + pow(facingLight, 1.75) * 0.070) * (0.72 + flatBoost * 0.28);',
+      '  float specular = pow(facingLight, 1.45) * highlightCaustic * (0.152 + flatBoost * 0.138);',
+      '  float contactShade = pow(facingShadow, 1.20) * shadowBand * (0.060 + flatBoost * 0.055);',
+      '  vec3 causticTint = mix(vec3(1.0), clamp(soft * 1.22, 0.0, 1.0), 0.16);',
+      '  color = mix(color, causticTint, causticStrength);',
+      '  color += vec3(specular);',
+      '  color *= 1.0 - contactShade;',
+      '  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);',
+      '}',
+    ].join('\n');
+
+    function compile(type, source) {
+      var shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+
+    var vertex = compile(gl.VERTEX_SHADER, vertexSource);
+    var fragment = compile(gl.FRAGMENT_SHADER, fragmentSource);
+    if (!vertex || !fragment) return null;
+    var program = gl.createProgram();
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+
+    var vertices = new Float32Array([
+      -1, -1, 0, 1,
+       1, -1, 1, 1,
+      -1,  1, 0, 0,
+      -1,  1, 0, 0,
+       1, -1, 1, 1,
+       1,  1, 1, 0,
+    ]);
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+    var stride = 4 * Float32Array.BYTES_PER_ELEMENT;
+    var position = gl.getAttribLocation(program, 'position');
+    var texCoord = gl.getAttribLocation(program, 'texCoord');
+    gl.enableVertexAttribArray(position);
+    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(texCoord);
+    gl.vertexAttribPointer(texCoord, 2, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
+
+    var texture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    } catch (e) {
+      gl.deleteTexture(texture);
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+      return null;
+    }
+
+    var blurredCanvas = createMultiPassBlurCanvas(image, outputWidth, outputHeight, Math.min(outputWidth, outputHeight));
+    var blurTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, blurTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, blurredCanvas);
+    } catch (e) {
+      gl.deleteTexture(blurTexture);
+      gl.deleteTexture(texture);
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+      return null;
+    }
+
+    gl.useProgram(program);
+    gl.uniform1i(gl.getUniformLocation(program, 'image'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'blurredImage'), 1);
+    gl.uniform2f(gl.getUniformLocation(program, 'resolution'), outputWidth, outputHeight);
+    gl.uniform2f(gl.getUniformLocation(program, 'innerCenter'), inner.centerX() * scale, inner.centerY() * scale);
+    gl.uniform2f(gl.getUniformLocation(program, 'innerHalfSize'), inner.width() * 0.5 * scale, inner.height() * 0.5 * scale);
+    gl.uniform1f(gl.getUniformLocation(program, 'innerRadius'), innerRadius * scale);
+    gl.uniform1f(gl.getUniformLocation(program, 'bevelWidth'), Math.min(outputWidth, outputHeight) * 0.026);
+    gl.uniform1f(gl.getUniformLocation(program, 'refractionHeight'), Math.min(outputWidth, outputHeight) * 0.072);
+    gl.uniform1f(gl.getUniformLocation(program, 'dispersion'), Math.max(1.2, Math.min(3.6, Math.min(outputWidth, outputHeight) * 0.0018)));
+    gl.viewport(0, 0, outputWidth, outputHeight);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.finish();
+    gl.deleteTexture(blurTexture);
+    gl.deleteTexture(texture);
+    gl.deleteBuffer(buffer);
+    gl.deleteProgram(program);
+    return canvas;
+  }
+
+  function drawLiquidGlassBackdrop(ctx, image, sourceCacheKey, width, height, unit, inner, innerRadius) {
+    if (!image) return;
+    var cacheKey = [
+      Math.round(width), Math.round(height),
+      Math.round(inner.left), Math.round(inner.top), Math.round(inner.right), Math.round(inner.bottom),
+      Math.round(innerRadius),
+    ].join(':');
+    var cachedCanvas = getCachedLiquidGlassCanvas(image, sourceCacheKey, cacheKey);
+    if (cachedCanvas) {
+      ctx.drawImage(cachedCanvas, 0, 0, width, height);
+      return;
+    }
+    var gpuCanvas = renderLiquidGlassWebGl(image, width, height, inner, innerRadius);
+    if (gpuCanvas) {
+      cacheLiquidGlassCanvas(image, sourceCacheKey, cacheKey, gpuCanvas);
+      ctx.save();
+      ctx.globalAlpha = 0.91;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(gpuCanvas, 0, 0, width, height);
+      ctx.restore();
+      return;
+    }
+    var scale = Math.min(1, 1600 / Math.max(width, height));
+    var sampleWidth = Math.max(1, Math.round(width * scale));
+    var sampleHeight = Math.max(1, Math.round(height * scale));
+    var sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = sampleWidth;
+    sourceCanvas.height = sampleHeight;
+    var sourceCtx = sourceCanvas.getContext('2d');
+    sourceCtx.imageSmoothingEnabled = true;
+    sourceCtx.imageSmoothingQuality = 'high';
+    sourceCtx.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+
+    var blurCanvas = createMultiPassBlurCanvas(sourceCanvas, sampleWidth, sampleHeight, unit * scale);
+
+    var glassCanvas = document.createElement('canvas');
+    glassCanvas.width = sampleWidth;
+    glassCanvas.height = sampleHeight;
+    var glassCtx = glassCanvas.getContext('2d');
+    glassCtx.imageSmoothingEnabled = true;
+    glassCtx.imageSmoothingQuality = 'high';
+    glassCtx.globalAlpha = 0.50;
+    glassCtx.drawImage(blurCanvas, 0, 0);
+    glassCtx.globalAlpha = 0.50;
+    glassCtx.drawImage(sourceCanvas, 0, 0);
+    glassCtx.globalAlpha = 1;
+
+    try {
+      var sourceData = sourceCtx.getImageData(0, 0, sampleWidth, sampleHeight);
+      var glassBaseData = glassCtx.getImageData(0, 0, sampleWidth, sampleHeight);
+      var edgeData = glassCtx.createImageData(sampleWidth, sampleHeight);
+      var sourcePixels = sourceData.data;
+      var glassBasePixels = glassBaseData.data;
+      var edgePixels = edgeData.data;
+      var left = inner.left * scale;
+      var top = inner.top * scale;
+      var right = inner.right * scale;
+      var bottom = inner.bottom * scale;
+      var radius = innerRadius * scale;
+      var centerX = (left + right) * 0.5;
+      var centerY = (top + bottom) * 0.5;
+      var halfX = Math.max(0, (right - left) * 0.5 - radius);
+      var halfY = Math.max(0, (bottom - top) * 0.5 - radius);
+      var edgeBand = Math.max(5, Math.min(sampleWidth, sampleHeight) * 0.026);
+      var maxShift = Math.max(4, Math.min(sampleWidth, sampleHeight) * 0.024);
+      var chromaShift = Math.max(0.45, Math.min(1.2, Math.min(sampleWidth, sampleHeight) * 0.0012));
+
+      function sampleChannelBilinear(sampleX, sampleY, channel) {
+        var safeX = Math.max(0, Math.min(sampleWidth - 1, sampleX));
+        var safeY = Math.max(0, Math.min(sampleHeight - 1, sampleY));
+        var x0 = Math.floor(safeX);
+        var y0 = Math.floor(safeY);
+        var x1 = Math.min(x0 + 1, sampleWidth - 1);
+        var y1 = Math.min(y0 + 1, sampleHeight - 1);
+        var tx = safeX - x0;
+        var ty = safeY - y0;
+        var topLeft = sourcePixels[(y0 * sampleWidth + x0) * 4 + channel];
+        var topRight = sourcePixels[(y0 * sampleWidth + x1) * 4 + channel];
+        var bottomLeft = sourcePixels[(y1 * sampleWidth + x0) * 4 + channel];
+        var bottomRight = sourcePixels[(y1 * sampleWidth + x1) * 4 + channel];
+        var top = topLeft + (topRight - topLeft) * tx;
+        var bottom = bottomLeft + (bottomRight - bottomLeft) * tx;
+        return top + (bottom - top) * ty;
+      }
+
+      function smoothStepValue(edge0, edge1, value) {
+        var amount = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+        return amount * amount * (3 - 2 * amount);
+      }
+
+      for (var y = 0; y < sampleHeight; y++) {
+        for (var x = 0; x < sampleWidth; x++) {
+          var dx = x - centerX;
+          var dy = y - centerY;
+          var qx = Math.abs(dx) - halfX;
+          var qy = Math.abs(dy) - halfY;
+          var outsideX = Math.max(qx, 0);
+          var outsideY = Math.max(qy, 0);
+          var signedDistance = Math.sqrt(outsideX * outsideX + outsideY * outsideY) + Math.min(Math.max(qx, qy), 0) - radius;
+          if (signedDistance < 0 || signedDistance > edgeBand) continue;
+
+          var normalX;
+          var normalY;
+          if (outsideX > 0 && outsideY > 0) {
+            var length = Math.max(0.0001, Math.sqrt(outsideX * outsideX + outsideY * outsideY));
+            normalX = outsideX / length * (dx < 0 ? -1 : 1);
+            normalY = outsideY / length * (dy < 0 ? -1 : 1);
+          } else if (qx > qy) {
+            normalX = dx < 0 ? -1 : 1;
+            normalY = 0;
+          } else {
+            normalX = 0;
+            normalY = dy < 0 ? -1 : 1;
+          }
+
+          var t = Math.max(0, Math.min(1, 1 - signedDistance / edgeBand));
+          var edgeWeight = t * t * (3 - 2 * t);
+          var shift = maxShift * edgeWeight;
+          var sourceX = x - normalX * shift;
+          var sourceY = y - normalY * shift;
+          var targetIndex = (y * sampleWidth + x) * 4;
+          var detailDifference = (
+            Math.abs(sourcePixels[targetIndex] - glassBasePixels[targetIndex]) +
+            Math.abs(sourcePixels[targetIndex + 1] - glassBasePixels[targetIndex + 1]) +
+            Math.abs(sourcePixels[targetIndex + 2] - glassBasePixels[targetIndex + 2])
+          ) / (255 * 3);
+          var flatBoost = Math.max(0, Math.min(1, 1 - (detailDifference - 0.025) / 0.135));
+          var facingLight = Math.max(normalX * 0.58 + normalY * 0.82, 0);
+          var facingShadow = Math.max(normalX * -0.58 + normalY * -0.82, 0);
+          var edgePosition = Math.max(0, Math.min(1, signedDistance / edgeBand));
+          var refractionCaustic = smoothStepValue(0.03, 0.20, edgePosition) *
+            (1 - smoothStepValue(0.28, 0.64, edgePosition));
+          var highlightWidth = Math.max(0.012, Math.min(0.10, 1 / Math.max(edgeBand, 1)));
+          var highlightDistance = (edgePosition - 0.145) / highlightWidth;
+          var highlightCaustic = Math.exp(-highlightDistance * highlightDistance);
+          var causticStrength = refractionCaustic *
+            (0.010 + Math.pow(facingLight, 1.75) * 0.070) *
+            (0.72 + flatBoost * 0.28);
+          var lightOffset = (
+            highlightCaustic * facingLight * (0.152 + flatBoost * 0.138) -
+            edgeWeight * facingShadow * (0.060 + flatBoost * 0.055)
+          ) * 255;
+          var red = Math.max(0, Math.min(255, sampleChannelBilinear(sourceX - normalX * chromaShift, sourceY - normalY * chromaShift, 0) + lightOffset));
+          var green = Math.max(0, Math.min(255, sampleChannelBilinear(sourceX, sourceY, 1) + lightOffset));
+          var blue = Math.max(0, Math.min(255, sampleChannelBilinear(sourceX + normalX * chromaShift, sourceY + normalY * chromaShift, 2) + lightOffset));
+          var tintRed = 255 * 0.84 + glassBasePixels[targetIndex] * 0.16;
+          var tintGreen = 255 * 0.84 + glassBasePixels[targetIndex + 1] * 0.16;
+          var tintBlue = 255 * 0.84 + glassBasePixels[targetIndex + 2] * 0.16;
+          edgePixels[targetIndex] = Math.round(red + (tintRed - red) * causticStrength);
+          edgePixels[targetIndex + 1] = Math.round(green + (tintGreen - green) * causticStrength);
+          edgePixels[targetIndex + 2] = Math.round(blue + (tintBlue - blue) * causticStrength);
+          edgePixels[targetIndex + 3] = Math.round(230 * edgeWeight);
+        }
+      }
+      var edgeCanvas = document.createElement('canvas');
+      edgeCanvas.width = sampleWidth;
+      edgeCanvas.height = sampleHeight;
+      edgeCanvas.getContext('2d').putImageData(edgeData, 0, 0);
+      glassCtx.drawImage(edgeCanvas, 0, 0);
+    } catch (e) {
+      // Cross-origin images can block pixel reads; the layered blur remains a safe fallback.
+    }
+
+    cacheLiquidGlassCanvas(image, sourceCacheKey, cacheKey, glassCanvas);
+    ctx.save();
+    ctx.globalAlpha = 0.86;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(glassCanvas, 0, 0, width, height);
+    ctx.restore();
+  }
+
+  /* --- LiquidGlassFrameRenderer --- */
+  var LiquidGlassFrameRenderer = makeRenderer({
+    backgroundColor: function () { return rgb(226, 229, 228); },
+    logoBackgroundTone: function () { return 'Mixed'; },
+    draw: function (ctx, bounds, info, assets, settings) {
+      var w = bounds.width();
+      var h = bounds.height();
+      var unit = Math.min(w, h);
+      var sideWidth = unit * 0.058;
+      var topWidth = unit * 0.056;
+      var bottomHeight = Math.max(h * 0.145, unit * 0.12);
+      var outer = RectF(0, 0, w, h);
+      var inner = RectF(
+        outer.left + sideWidth,
+        outer.top + topWidth,
+        outer.right - sideWidth,
+        outer.bottom - bottomHeight
+      );
+      var outerRadius = 0;
+      var innerRadius = unit * 0.025;
+      var contentColor = assets.hasExplicitTextColor ? assets.cardContentColor : COLOR_WHITE;
+      var darkScrim = relativeLuminance(contentColor) >= 0.18;
+      var scrimRgb = darkScrim ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
+
+      ctx.save();
+      ctx.beginPath();
+      addRoundedRectPath(ctx, outer, outerRadius);
+      addRoundedRectPath(ctx, inner, innerRadius);
+      try { ctx.clip('evenodd'); } catch (e) { ctx.clip(); }
+
+      drawLiquidGlassBackdrop(ctx, assets.sourcePhotoImage, assets.sourceCacheKey, w, h, unit, inner, innerRadius);
+      if (assets.hasExplicitCardBackgroundColor) {
+        fillRect(ctx, 0, 0, w, h, withAlpha(assets.cardBackgroundColor, 30));
+      }
+      var sheen = ctx.createLinearGradient(outer.left, outer.top, outer.right, outer.bottom);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.078)');
+      sheen.addColorStop(0.48, 'rgba(255,255,255,0)');
+      sheen.addColorStop(1, 'rgba(0,0,0,0.047)');
+      fillRect(ctx, 0, 0, w, h, sheen);
+      ctx.restore();
+
+      var contentLeft = inner.left + unit * 0.015;
+      var contentTop = inner.bottom + bottomHeight * 0.20;
+      var contentRight = inner.right - unit * 0.015;
+      var logoWidth = Math.min(w * 0.16, bottomHeight * 1.12);
+      var logoBox = RectF(contentRight - logoWidth, contentTop, contentRight, outer.bottom - bottomHeight * 0.18);
+      var logoColor = darkScrim ? COLOR_WHITE : rgb(18, 19, 18);
+      var logoActual = drawLogoIfPresent(ctx, logoBox, assetsWithLogoContrast(assets, logoColor), logoColor, 'End', 'Inside');
+      var textRight = logoActual !== null ? logoActual.left - unit * 0.022 : contentRight;
+      var title = displayTitleOrNull(info);
+      var details = detailTextExcluding(title, [info.housing, info.switchName, info.plate, info.mount, info.keycap]);
+      var titlePaint = medium(scaled(h * 0.025, settings), contentColor);
+      var detailPaint = regular(scaled(h * 0.0135, settings), contentColor);
+      if (title !== null) {
+        drawLiquidGlassText(ctx, title, contentLeft, contentTop + titlePaint.size, titlePaint, textRight - contentLeft, scrimRgb, unit, false);
+      }
+      if (isNotBlank(details)) {
+        var detailY = contentTop + (title === null ? detailPaint.size * 1.15 : titlePaint.size * 1.78);
+        drawLiquidGlassText(ctx, details, contentLeft, detailY, detailPaint, textRight - contentLeft, scrimRgb, unit, true);
+      }
+      drawPaletteChipsInRect(
+        ctx,
+        visiblePaletteColors(assets, settings),
+        RectF(contentLeft, outer.bottom - bottomHeight * 0.30, textRight, outer.bottom - bottomHeight * 0.10),
+        bottomHeight * 0.095,
+        bottomHeight * 0.048,
+        withAlpha(contentColor, 84),
+        'Start'
+      );
+    },
+  });
+
   /* --- DarkGlassStripRenderer --- */
   var DarkGlassStripRenderer = makeRenderer({
     logoBackgroundTone: function () { return 'Dark'; },
@@ -1566,6 +2184,7 @@
     { id: 'BottomSpecBar', renderer: BottomSpecBarRenderer },
     { id: 'CornerMark', renderer: CornerMarkRenderer },
     { id: 'PosterMargin', renderer: PosterMarginRenderer },
+    { id: 'LiquidGlassFrame', renderer: LiquidGlassFrameRenderer },
     { id: 'DarkGlassStrip', renderer: DarkGlassStripRenderer },
     { id: 'SideSpecRail', renderer: SideSpecRailRenderer },
     { id: 'TopNameplate', renderer: TopNameplateRenderer },
@@ -1980,6 +2599,8 @@
     var contentColor = resolveCustomTextColor(readableContentColor(backgroundColor), paletteColors, settings, renderStyle);
     var renderAssets = {
       logoBitmap: logoBitmap,
+      sourcePhotoImage: image,
+      sourceCacheKey: options.sourceCacheKey || null,
       whiteLogoImage: logoVariants.white || null,
       blackLogoImage: logoVariants.black || null,
       logoLabel: logoLabel,
@@ -2119,12 +2740,15 @@
 
     var renderAssets = {
       logoBitmap: logoBitmap,
+      sourcePhotoImage: image,
+      sourceCacheKey: options.sourceCacheKey || null,
       whiteLogoImage: white,
       blackLogoImage: black,
       logoLabel: logoLabel,
       paletteColors: paletteColors,
       hasLogo: hasLogo,
       cardBackgroundColor: backgroundColor,
+      hasExplicitCardBackgroundColor: !!(settings.showPaletteColors && renderStyle.usePaletteColorForCardBackground),
       cardContentColor: contentColor,
       hasExplicitTextColor: !!(settings.showPaletteColors && renderStyle.usePaletteColorForText),
       logoTintColor: hasCustomLogo ? null : resolvedLogo.tintColor,

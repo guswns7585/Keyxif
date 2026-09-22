@@ -86,6 +86,18 @@
       "webStatus": "implemented"
     },
     {
+      "id": "LiquidGlassFrame",
+      "displayName": "리퀴드 글라스 프레임",
+      "description": "Transparent tinted liquid-glass frame over all four photo edges.",
+      "infoPosition": "inside bottom glass edge",
+      "logoPosition": "inside bottom right glass edge",
+      "supportsPaletteChips": true,
+      "backgroundTone": "mixed",
+      "plainExport": false,
+      "androidStatus": "implemented",
+      "webStatus": "implemented"
+    },
+    {
       "id": "SideSpecRail",
       "displayName": "사이드 스펙 레일",
       "description": "Vertical side rail for logo and build specs.",

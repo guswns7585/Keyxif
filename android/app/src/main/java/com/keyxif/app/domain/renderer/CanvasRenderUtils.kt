@@ -26,12 +26,15 @@ import kotlin.math.min
 
 data class RenderAssets(
     val logoBitmap: Bitmap?,
+    val sourcePhotoBitmap: Bitmap? = null,
+    val sourceCacheKey: String? = null,
     val whiteLogoBitmap: Bitmap? = null,
     val blackLogoBitmap: Bitmap? = null,
     val logoLabel: String,
     val paletteColors: List<Int> = emptyList(),
     val hasLogo: Boolean = logoBitmap != null || logoLabel.isMeaningfulBuildText(),
     val cardBackgroundColor: Int = Color.TRANSPARENT,
+    val hasExplicitCardBackgroundColor: Boolean = false,
     val cardContentColor: Int = Color.BLACK,
     val hasExplicitTextColor: Boolean = false,
     val logoTintColor: Int? = null,

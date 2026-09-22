@@ -21,6 +21,7 @@ import androidx.work.WorkManager
 import com.keyxif.app.BuildConfig
 import com.keyxif.app.data.exported.ExportedImageRepository
 import com.keyxif.app.data.backup.KeyxifBackupRepository
+import com.keyxif.app.data.presets.PresetData
 import com.keyxif.app.data.repository.AppSettingsRepository
 import com.keyxif.app.data.repository.BuildPresetRepository
 import com.keyxif.app.data.repository.ColorPresetRepository
@@ -97,7 +98,10 @@ import com.keyxif.app.util.BitmapUtils
 import com.keyxif.app.util.FileNameUtils
 import java.io.File
 import java.io.InputStream
+import java.nio.file.Files
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -117,6 +121,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
 private const val CUSTOM_TEMPLATE_RENDERING_ENABLED = false
+private const val ORPHAN_FILE_RETENTION_MS = 24L * 60L * 60L * 1000L
 
 data class KeyxifUiState(
     val currentStep: AppStep = AppStep.Photos,
@@ -207,6 +212,8 @@ class KeyxifViewModel(
     private val previewRenderSemaphore = Semaphore(2)
     private var appliedInitialSettings = false
     private var pendingDraftSession: DraftSession? = null
+    private val handledShareRequestIds = mutableSetOf<String>()
+    private val exportRequestPending = AtomicBoolean(false)
     private var autoSaveReady = false
     private var lastCompletedExportWorkId: UUID? = null
     private var lastCompletedUpdateWorkId: UUID? = null
@@ -478,7 +485,8 @@ class KeyxifViewModel(
         importPhotoUris(uris, fromShare = false)
     }
 
-    fun addSharedImages(uris: List<Uri>) {
+    fun addSharedImages(uris: List<Uri>, requestId: String) {
+        if (!handledShareRequestIds.add(requestId)) return
         importPhotoUris(uris, fromShare = true)
     }
 
@@ -491,15 +499,28 @@ class KeyxifViewModel(
         viewModelScope.launch {
             autoSaveReady = false
             _uiState.update { state ->
+                val incomingPhotos = state.photos
                 state.copy(
-                    photos = draft.photoItems.map(::validatedRestoredPhoto),
+                    photos = mergeDraftAndIncomingPhotos(
+                        draft.photoItems.map(::validatedRestoredPhoto),
+                        incomingPhotos,
+                        PhotoItem::id,
+                    ),
                     selectedTemplate = draft.selectedTemplate,
-                    currentStep = normalizeStep(draft.currentStep),
-                    selectedPhotoId = draft.selectedPhotoId,
+                    currentStep = if (incomingPhotos.isNotEmpty()) AppStep.Photos else normalizeStep(draft.currentStep),
+                    selectedPhotoId = if (incomingPhotos.isNotEmpty()) {
+                        state.selectedPhotoId ?: incomingPhotos.first().id
+                    } else {
+                        draft.selectedPhotoId
+                    },
                     isSettingsOpen = false,
                     showDraftRestorePrompt = false,
                     draftLastUpdatedAt = draft.lastUpdatedAt,
-                    uiMessage = "이전 작업을 복구했습니다.",
+                    uiMessage = if (incomingPhotos.isNotEmpty()) {
+                        "이전 작업을 복구하고 새 사진을 추가했습니다."
+                    } else {
+                        "이전 작업을 복구했습니다."
+                    },
                 )
             }
             pendingDraftSession = null
@@ -510,17 +531,25 @@ class KeyxifViewModel(
 
     fun discardDraftSession() {
         viewModelScope.launch(Dispatchers.IO) {
+            val discardedPhotos = pendingDraftSession?.photoItems.orEmpty()
             draftSessionRepository.clear()
             pendingDraftSession = null
+            val retainedUris = uiState.value.photos.mapTo(mutableSetOf()) { it.uri }
+            discardedPhotos.filterNot { it.uri in retainedUris }.forEach(::deleteLocalPhotoFile)
             withContext(Dispatchers.Main) {
                 _uiState.update {
                     it.copy(
-                        photos = emptyList(),
-                        selectedPhotoId = null,
+                        selectedPhotoId = it.selectedPhotoId?.takeIf { id ->
+                            it.photos.any { photo -> photo.id == id }
+                        } ?: it.photos.firstOrNull()?.id,
                         currentStep = AppStep.Photos,
                         showDraftRestorePrompt = false,
                         draftLastUpdatedAt = null,
-                        uiMessage = "이전 작업을 폐기했습니다.",
+                        uiMessage = if (it.photos.isEmpty()) {
+                            "이전 작업을 폐기했습니다."
+                        } else {
+                            "이전 작업을 폐기하고 새 사진으로 시작합니다."
+                        },
                     )
                 }
                 autoSaveReady = true
@@ -529,19 +558,31 @@ class KeyxifViewModel(
     }
 
     fun startNewSession() {
+        if (uiState.value.exportProgress.isSaving) {
+            _uiState.update { it.copy(uiMessage = "저장이 끝난 뒤 새 작업을 시작해 주세요.") }
+            return
+        }
+        val previousPhotos = uiState.value.photos
         viewModelScope.launch(Dispatchers.IO) {
             draftSessionRepository.clear()
+            pendingDraftSession = null
             withContext(Dispatchers.Main) {
                 _uiState.update {
+                    val previousIds = previousPhotos.mapTo(mutableSetOf()) { photo -> photo.id }
+                    val remainingPhotos = it.photos.filterNot { photo -> photo.id in previousIds }
                     it.copy(
                         currentStep = AppStep.Photos,
-                        photos = emptyList(),
-                        selectedPhotoId = null,
+                        photos = remainingPhotos,
+                        selectedPhotoId = remainingPhotos.firstOrNull()?.id,
+                        selectedBatchPhotoIds = emptySet(),
+                        selectedExportPhotoIds = emptySet(),
+                        isBatchSelectionMode = false,
                         exportProgress = ExportProgress(),
                         showDraftRestorePrompt = false,
                         draftLastUpdatedAt = null,
                     )
                 }
+                previousPhotos.forEach(::deleteLocalPhotoFile)
             }
         }
     }
@@ -576,10 +617,12 @@ class KeyxifViewModel(
                 state.settings.rememberLastNickname -> KeyboardBuildInfo(nickname = state.recentNicknames.firstOrNull().orEmpty())
                 else -> null
             }
+            var failedCount = 0
             val imported = withContext(Dispatchers.IO) {
                 val app = getApplication<Application>()
                 uris.distinctBy(Uri::toString).mapNotNull { uri ->
                     runCatching {
+                        tryPersistReadPermission(uri)
                         val displayName = displayNameFor(app, uri)
                         val localUri = copyUriToSourceStore(uri, displayName)
                         PhotoItem(
@@ -588,6 +631,9 @@ class KeyxifViewModel(
                             displayName = displayName,
                             buildInfo = copiedInfo ?: KeyboardBuildInfo(),
                         )
+                    }.onFailure { error ->
+                        failedCount++
+                        android.util.Log.e("KeyxifImport", "Failed to import shared photo", error)
                     }.getOrNull()
                 }
             }
@@ -595,11 +641,21 @@ class KeyxifViewModel(
             _uiState.update { current ->
                 current.copy(
                     photos = current.photos + imported,
-                    selectedPhotoId = current.selectedPhotoId ?: imported.firstOrNull()?.id,
+                    selectedPhotoId = if (fromShare && imported.isNotEmpty()) {
+                        imported.first().id
+                    } else {
+                        current.selectedPhotoId ?: imported.firstOrNull()?.id
+                    },
+                    isBatchSelectionMode = if (fromShare) false else current.isBatchSelectionMode,
+                    selectedBatchPhotoIds = if (fromShare) emptySet() else current.selectedBatchPhotoIds,
+                    selectedExportPhotoIds = if (fromShare) emptySet() else current.selectedExportPhotoIds,
                     currentStep = if (fromShare) AppStep.Photos else current.currentStep,
                     shareMessage = if (fromShare) {
                         when {
+                            imported.isNotEmpty() && failedCount > 0 ->
+                                "공유한 이미지 ${imported.size}장을 추가했습니다. ${failedCount}장은 가져오지 못했습니다."
                             imported.isNotEmpty() -> "공유한 이미지 ${imported.size}장을 사진 목록에 추가했습니다."
+                            failedCount > 0 -> "공유한 이미지를 가져오지 못했습니다. 저장 공간과 사진 접근 권한을 확인해 주세요."
                             else -> "가져올 수 있는 새 이미지가 없습니다."
                         }
                     } else {
@@ -607,7 +663,10 @@ class KeyxifViewModel(
                     },
                     uiMessage = if (!fromShare) {
                         when {
+                            imported.isNotEmpty() && failedCount > 0 ->
+                                "사진 ${imported.size}장을 추가했습니다. ${failedCount}장은 가져오지 못했습니다."
                             imported.isNotEmpty() -> "사진 ${imported.size}장을 추가했습니다."
+                            failedCount > 0 -> "사진을 가져오지 못했습니다. 저장 공간과 사진 접근 권한을 확인해 주세요."
                             else -> "가져올 수 있는 새 사진이 없습니다."
                         }
                     } else {
@@ -620,6 +679,10 @@ class KeyxifViewModel(
     }
 
     fun removePhoto(id: String) {
+        if (uiState.value.exportProgress.isSaving) {
+            _uiState.update { it.copy(uiMessage = "저장이 끝난 뒤 사진을 삭제해 주세요.") }
+            return
+        }
         _uiState.update { state ->
             state.photos.firstOrNull { it.id == id }?.let(::deleteLocalPhotoFile)
             val updated = state.photos.filterNot { it.id == id }
@@ -637,6 +700,10 @@ class KeyxifViewModel(
     }
 
     fun clearPhotos() {
+        if (uiState.value.exportProgress.isSaving) {
+            _uiState.update { it.copy(uiMessage = "저장이 끝난 뒤 사진을 비워 주세요.") }
+            return
+        }
         _uiState.update { state ->
             state.photos.forEach(::deleteLocalPhotoFile)
             state.copy(
@@ -741,6 +808,42 @@ class KeyxifViewModel(
     fun updateBuildInfo(buildInfo: KeyboardBuildInfo) {
         val photoId = uiState.value.selectedPhoto?.id ?: return
         updatePhoto(photoId) { it.copy(buildInfo = buildInfo) }
+        val customLogoUri = buildInfo.customLogoUri ?: return
+        if (isManagedFileUri(customLogoUri, "keyxif_logos")) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val localLogoUri = runCatching {
+                tryPersistReadPermission(customLogoUri)
+                copyUriToLogoStore(
+                    uri = customLogoUri,
+                    displayName = displayNameFor(getApplication(), customLogoUri),
+                )
+            }.getOrNull()
+            _uiState.update { state ->
+                state.copy(
+                    photos = state.photos.map { photo ->
+                        if (photo.id != photoId || photo.buildInfo.customLogoUri != customLogoUri) {
+                            photo
+                        } else if (localLogoUri != null) {
+                            photo.copy(buildInfo = photo.buildInfo.copy(customLogoUri = localLogoUri))
+                        } else {
+                            photo.copy(
+                                buildInfo = photo.buildInfo.copy(
+                                    customLogoUri = null,
+                                    logoId = PresetData.LogoIds.KEYXIF,
+                                    logoDisabled = false,
+                                ),
+                                errorMessage = "사용자 로고 접근 권한이 만료되어 Keyxif 로고로 대체했습니다.",
+                            )
+                        }
+                    },
+                    uiMessage = if (localLogoUri == null) {
+                        "사용자 로고를 가져오지 못해 Keyxif 로고로 대체했습니다."
+                    } else {
+                        state.uiMessage
+                    },
+                )
+            }
+        }
     }
 
     fun updateSelectedPhotoRenderStyle(transform: (PhotoRenderStyle) -> PhotoRenderStyle) {
@@ -2163,67 +2266,147 @@ class KeyxifViewModel(
             _uiState.update { it.copy(uiMessage = "저장할 사진이 없습니다.") }
             return
         }
+        if (uiState.value.exportProgress.isSaving || !exportRequestPending.compareAndSet(false, true)) {
+            _uiState.update { it.copy(uiMessage = "이미 저장 작업이 진행 중입니다.") }
+            return
+        }
         viewModelScope.launch {
-            val state = uiState.value
-            val photos = photoIds.mapNotNull { id -> state.photos.firstOrNull { it.id == id } }
-            if (photos.isEmpty()) {
-                _uiState.update { it.copy(uiMessage = "저장할 사진을 찾을 수 없습니다.") }
-                return@launch
-            }
-            val directoryLabel = outputDirectoryLabel(state.settings)
-            _uiState.update {
-                it.copy(
-                    exportProgress = ExportProgress(
-                        isSaving = true,
-                        total = photos.size,
-                        message = "저장 작업을 준비하는 중입니다.",
-                    ),
-                    photos = it.photos.map { photo ->
-                        if (photos.any { target -> target.id == photo.id }) {
-                            photo.copy(renderStatus = RenderStatus.Rendering, errorMessage = null)
-                        } else {
-                            photo
+            try {
+                val workAlreadyActive = try {
+                    withContext(Dispatchers.IO) {
+                        workManager.getWorkInfosForUniqueWork(ExportWorker.UNIQUE_WORK_NAME).get().any { info ->
+                            info.state == WorkInfo.State.ENQUEUED || info.state == WorkInfo.State.RUNNING
                         }
-                    },
-                )
-            }
-
-            val payloadFile = runCatching {
-                val customTemplate = if (CUSTOM_TEMPLATE_RENDERING_ENABLED) {
-                    state.selectedCustomTemplateId?.let { id ->
-                        state.customTemplates.firstOrNull { it.id == id }
                     }
-                } else {
-                    null
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    android.util.Log.e("KeyxifExport", "Could not inspect current export", error)
+                    _uiState.update { it.copy(uiMessage = "진행 중인 저장 작업을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.") }
+                    return@launch
                 }
-                prepareExportPayload(photos, state.selectedTemplate, state.settings, customTemplate)
-            }.getOrElse { error ->
+                if (workAlreadyActive) {
+                    _uiState.update { it.copy(uiMessage = "이미 저장 작업이 진행 중입니다.") }
+                    return@launch
+                }
+                val state = uiState.value
+                val photos = photoIds.mapNotNull { id -> state.photos.firstOrNull { it.id == id } }
+                if (photos.isEmpty()) {
+                    _uiState.update { it.copy(uiMessage = "저장할 사진을 찾을 수 없습니다.") }
+                    return@launch
+                }
+                val directoryLabel = outputDirectoryLabel(state.settings)
                 _uiState.update {
                     it.copy(
                         exportProgress = ExportProgress(
-                            isSaving = false,
+                            isSaving = true,
                             total = photos.size,
-                            failureCount = photos.size,
-                            message = error.message ?: "저장 작업을 준비할 수 없습니다.",
+                            message = "저장 작업을 준비하는 중입니다.",
+                        ),
+                        photos = it.photos.map { photo ->
+                            if (photos.any { target -> target.id == photo.id }) {
+                                photo.copy(renderStatus = RenderStatus.Rendering, errorMessage = null)
+                            } else {
+                                photo
+                            }
+                        },
+                    )
+                }
+
+                val payloadFile = runCatching {
+                    val customTemplate = if (CUSTOM_TEMPLATE_RENDERING_ENABLED) {
+                        state.selectedCustomTemplateId?.let { id ->
+                            state.customTemplates.firstOrNull { it.id == id }
+                        }
+                    } else {
+                        null
+                    }
+                    val durableResults = withContext(Dispatchers.IO) {
+                        photos.map { photo -> photo to runCatching { ensureDurablePhotoSources(photo) } }
+                    }
+                    val durablePhotos = durableResults.mapNotNull { it.second.getOrNull() }
+                    val inaccessiblePhotoIds = durableResults
+                        .filter { it.second.isFailure }
+                        .mapTo(mutableSetOf()) { it.first.id }
+                    val durableById = durablePhotos.associateBy(PhotoItem::id)
+                    _uiState.update { current ->
+                        current.copy(
+                            photos = current.photos.map { currentPhoto ->
+                                when {
+                                    currentPhoto.id in inaccessiblePhotoIds -> currentPhoto.copy(
+                                        renderStatus = RenderStatus.Error,
+                                        errorMessage = "원본 사진 접근 권한이 만료되었습니다. 사진을 다시 추가해 주세요.",
+                                    )
+                                    else -> durableById[currentPhoto.id]?.let { durable ->
+                                        currentPhoto.copy(uri = durable.uri, buildInfo = durable.buildInfo)
+                                    } ?: currentPhoto
+                                }
+                            },
+                            uiMessage = if (inaccessiblePhotoIds.isNotEmpty()) {
+                                "${inaccessiblePhotoIds.size}장은 원본 접근 권한이 없어 제외하고 나머지 사진을 저장합니다."
+                            } else {
+                                current.uiMessage
+                            },
+                        )
+                    }
+                    if (durablePhotos.isEmpty()) {
+                        error("원본 사진 접근 권한이 만료되었습니다. 사진 단계에서 사진을 다시 추가해 주세요.")
+                    }
+                    prepareExportPayload(durablePhotos, state.selectedTemplate, state.settings, customTemplate)
+                }.getOrElse { error ->
+                    _uiState.update {
+                        it.copy(
+                            exportProgress = ExportProgress(
+                                isSaving = false,
+                                total = photos.size,
+                                failureCount = photos.size,
+                                message = error.message ?: "저장 작업을 준비할 수 없습니다.",
+                            ),
+                        )
+                    }
+                    return@launch
+                }
+
+                val request = ExportWorker.request(payloadFile.absolutePath)
+                val accepted = try {
+                    withContext(Dispatchers.IO) {
+                        workManager.enqueueUniqueWork(
+                            ExportWorker.UNIQUE_WORK_NAME,
+                            ExistingWorkPolicy.KEEP,
+                            request,
+                        ).result.get()
+                        workManager.getWorkInfoById(request.id).get() != null
+                    }
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    android.util.Log.e("KeyxifExport", "Could not enqueue export", error)
+                    false
+                }
+                if (!accepted) {
+                    withContext(Dispatchers.IO) { payloadFile.parentFile?.deleteRecursively() }
+                    _uiState.update { current ->
+                        current.copy(
+                            exportProgress = ExportProgress(isSaving = false, message = "저장 작업을 시작하지 못했습니다. 진행 중인 저장을 확인해 주세요."),
+                            photos = current.photos.map { photo ->
+                                if (photo.id in photoIds && photo.renderStatus == RenderStatus.Rendering) {
+                                    photo.copy(renderStatus = RenderStatus.Idle)
+                                } else {
+                                    photo
+                                }
+                            },
+                        )
+                    }
+                    return@launch
+                }
+                _uiState.update {
+                    it.copy(
+                        exportProgress = it.exportProgress.copy(
+                            isSaving = true,
+                            message = "${directoryLabel}에 백그라운드 저장을 시작했습니다.",
                         ),
                     )
                 }
-                return@launch
-            }
-
-            val request = ExportWorker.request(payloadFile.absolutePath)
-            workManager.enqueueUniqueWork(
-                ExportWorker.UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                request,
-            )
-            _uiState.update {
-                it.copy(
-                    exportProgress = it.exportProgress.copy(
-                        isSaving = true,
-                        message = "${directoryLabel}에 백그라운드 저장을 시작했습니다.",
-                    ),
-                )
+            } finally {
+                exportRequestPending.set(false)
             }
         }
     }
@@ -2238,32 +2421,37 @@ class KeyxifViewModel(
         val workDir = File(getApplication<Application>().cacheDir, "keyxif_export/$workId").apply {
             mkdirs()
         }
-        val cachedPhotos = photos.mapIndexed { index, photo ->
-            val sourceUri = copyUriToExportCache(
-                uri = photo.uri,
-                target = File(workDir, "photo_${index}.bin"),
-            )
-            val cachedLogoUri = photo.buildInfo.customLogoUri?.let { logoUri ->
-                copyUriToExportCache(
-                    uri = logoUri,
-                    target = File(workDir, "logo_${index}.bin"),
+        try {
+            val cachedPhotos = photos.mapIndexed { index, photo ->
+                val sourceUri = copyUriToExportCache(
+                    uri = photo.uri,
+                    target = File(workDir, "photo_${index}.bin"),
+                )
+                val cachedLogoUri = photo.buildInfo.customLogoUri?.let { logoUri ->
+                    copyUriToExportCache(
+                        uri = logoUri,
+                        target = File(workDir, "logo_${index}.bin"),
+                    )
+                }
+                photo.copy(
+                    uri = sourceUri,
+                    buildInfo = photo.buildInfo.copy(customLogoUri = cachedLogoUri),
+                    renderStatus = RenderStatus.Idle,
+                    errorMessage = null,
                 )
             }
-            photo.copy(
-                uri = sourceUri,
-                buildInfo = photo.buildInfo.copy(customLogoUri = cachedLogoUri),
-                renderStatus = RenderStatus.Idle,
-                errorMessage = null,
+            val payload = ExportWorkPayload(
+                photos = cachedPhotos,
+                template = template,
+                settings = settings,
+                customTemplate = customTemplate,
             )
-        }
-        val payload = ExportWorkPayload(
-            photos = cachedPhotos,
-            template = template,
-            settings = settings,
-            customTemplate = customTemplate,
-        )
-        File(workDir, "request.json").also { file ->
-            file.writeText(ExportWorkPayloadCodec.encode(payload).toString(), Charsets.UTF_8)
+            File(workDir, "request.json").also { file ->
+                file.writeText(ExportWorkPayloadCodec.encode(payload).toString(), Charsets.UTF_8)
+            }
+        } catch (error: Throwable) {
+            workDir.deleteRecursively()
+            throw error
         }
     }
 
@@ -2271,6 +2459,13 @@ class KeyxifViewModel(
         uri: Uri,
         target: File,
     ): Uri {
+        if (uri.scheme == "file") {
+            val source = uri.path?.let(::File)
+            if (source != null && source.isFile) {
+                val linked = runCatching { Files.createLink(target.toPath(), source.toPath()) }.isSuccess
+                if (linked) return target.toUri()
+            }
+        }
         openInputStream(uri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         } ?: error("이미지 파일을 읽을 수 없습니다.")
@@ -2280,21 +2475,75 @@ class KeyxifViewModel(
     private fun copyUriToSourceStore(
         uri: Uri,
         displayName: String,
+    ): Uri = copyUriToManagedStore(uri, displayName, "keyxif_sources", "photo")
+
+    private fun copyUriToLogoStore(
+        uri: Uri,
+        displayName: String,
+    ): Uri = copyUriToManagedStore(uri, displayName, "keyxif_logos", "logo")
+
+    private fun copyUriToManagedStore(
+        uri: Uri,
+        displayName: String,
+        directoryName: String,
+        filePrefix: String,
     ): Uri {
-        val sourceDir = File(getApplication<Application>().filesDir, "keyxif_sources").apply {
-            mkdirs()
-        }
+        val sourceDir = File(getApplication<Application>().filesDir, directoryName).apply { mkdirs() }
         val extension = displayName.substringAfterLast('.', missingDelimiterValue = "")
             .lowercase()
             .takeIf { it.length in 2..5 && it.all(Char::isLetterOrDigit) }
             ?: "img"
         val safeName = FileNameUtils.sanitize(displayName.substringBeforeLast('.', displayName))
             .ifBlank { "photo" }
-        val target = File(sourceDir, "${System.currentTimeMillis()}_${UUID.randomUUID()}_${safeName}.$extension")
-        openInputStream(uri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("사진을 앱 내부 저장소로 복사할 수 없습니다.")
-        return target.toUri()
+        val target = File(sourceDir, "${filePrefix}_${System.currentTimeMillis()}_${UUID.randomUUID()}_${safeName}.$extension")
+        try {
+            openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("사진을 앱 내부 저장소로 복사할 수 없습니다.")
+            return target.toUri()
+        } catch (error: Throwable) {
+            target.delete()
+            throw error
+        }
+    }
+
+    private fun ensureDurablePhotoSources(photo: PhotoItem): PhotoItem {
+        val sourceUri = if (isManagedFileUri(photo.uri, "keyxif_sources")) {
+            photo.uri
+        } else {
+            copyUriToSourceStore(photo.uri, photo.displayName)
+        }
+        val customLogoUri = photo.buildInfo.customLogoUri
+        if (customLogoUri == null || isManagedFileUri(customLogoUri, "keyxif_logos")) {
+            return photo.copy(uri = sourceUri)
+        }
+        val durableLogoUri = runCatching {
+            copyUriToLogoStore(
+                uri = customLogoUri,
+                displayName = displayNameFor(getApplication(), customLogoUri),
+            )
+        }.getOrNull()
+        return photo.copy(
+            uri = sourceUri,
+            buildInfo = if (durableLogoUri != null) {
+                photo.buildInfo.copy(customLogoUri = durableLogoUri)
+            } else {
+                photo.buildInfo.copy(
+                    customLogoUri = null,
+                    logoId = PresetData.LogoIds.KEYXIF,
+                    logoDisabled = false,
+                )
+            },
+        )
+    }
+
+    private fun isManagedFileUri(uri: Uri, directoryName: String): Boolean {
+        if (uri.scheme != "file") return false
+        val root = runCatching {
+            File(getApplication<Application>().filesDir, directoryName).canonicalFile
+        }.getOrNull() ?: return false
+        val file = runCatching { uri.path?.let(::File)?.canonicalFile }.getOrNull() ?: return false
+        return file.isFile && file.parentFile == root
     }
 
     private fun openInputStream(uri: Uri): InputStream? {
@@ -2305,13 +2554,23 @@ class KeyxifViewModel(
         }
     }
 
+    private fun tryPersistReadPermission(uri: Uri) {
+        if (uri.scheme != "content") return
+        runCatching {
+            getApplication<Application>().contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+    }
+
     private fun deleteLocalPhotoFile(photo: PhotoItem) {
         if (photo.uri.scheme != "file") return
         val sourceRoot = runCatching {
             File(getApplication<Application>().filesDir, "keyxif_sources").canonicalFile
         }.getOrNull() ?: return
         val target = runCatching { photo.uri.path?.let(::File)?.canonicalFile }.getOrNull() ?: return
-        if (target.path.startsWith(sourceRoot.path)) {
+        if (target.parentFile == sourceRoot) {
             runCatching { target.delete() }
         }
     }
@@ -2488,6 +2747,10 @@ class KeyxifViewModel(
             ?: if (info.state == WorkInfo.State.SUCCEEDED) "저장이 완료되었습니다." else "저장 작업이 실패했습니다."
         val photoIds = output.getString(ExportWorker.KEY_PHOTO_IDS)?.toStringList().orEmpty()
         val failedIds = output.getString(ExportWorker.KEY_FAILED_IDS)?.toStringList().orEmpty().toSet()
+        val savedIds = output.getString(ExportWorker.KEY_SAVED_IDS)?.toStringList().orEmpty().toSet()
+        val failureDetails = runCatching {
+            JSONObject(output.getString(ExportWorker.KEY_FAILURE_DETAILS).orEmpty())
+        }.getOrNull()
         val savedUri = output.getString(ExportWorker.KEY_SAVED_URI)?.let(Uri::parse)
 
         _uiState.update { state ->
@@ -2498,22 +2761,25 @@ class KeyxifViewModel(
                     total = total,
                     successCount = success,
                     failureCount = failure,
-                    message = if (state.settings.showSaveToast) message else null,
+                    message = if (state.settings.showSaveToast || failure > 0 || info.state != WorkInfo.State.SUCCEEDED) {
+                        message
+                    } else {
+                        null
+                    },
                 ),
                 photos = state.photos.map { photo ->
                     when {
                         photo.id in failedIds -> photo.copy(
                             renderStatus = RenderStatus.Error,
-                            errorMessage = "백그라운드 저장 실패",
+                            errorMessage = failureDetails?.optString(photo.id)?.takeIf(String::isNotBlank)
+                                ?: "백그라운드 저장 실패",
                         )
-                        photoIds.isEmpty() || photo.id in photoIds -> photo.copy(
-                            renderStatus = if (info.state == WorkInfo.State.SUCCEEDED && photo.id !in failedIds) {
-                                RenderStatus.Saved
-                            } else {
-                                RenderStatus.Error
-                            },
-                            errorMessage = if (info.state == WorkInfo.State.SUCCEEDED && photo.id !in failedIds) null else message,
-                        )
+                        photo.id in savedIds -> photo.copy(renderStatus = RenderStatus.Saved, errorMessage = null)
+                        info.state != WorkInfo.State.SUCCEEDED &&
+                            (photoIds.isEmpty() || photo.id in photoIds) ->
+                            photo.copy(renderStatus = RenderStatus.Error, errorMessage = message)
+                        photo.id in photoIds && photo.renderStatus == RenderStatus.Rendering ->
+                            photo.copy(renderStatus = RenderStatus.Idle, errorMessage = null)
                         else -> photo
                     }
                 },
@@ -2746,6 +3012,8 @@ class KeyxifViewModel(
     private fun loadDraftOnStart() {
         viewModelScope.launch(Dispatchers.IO) {
             val draft = draftSessionRepository.getDraft()
+            runCatching { pruneOrphanedStorage(draft) }
+                .onFailure { android.util.Log.w("KeyxifStorage", "Orphan cleanup skipped", it) }
             val persistedSettings = settingsRepository.settingsFlow.first()
             withContext(Dispatchers.Main) {
                 val settings = persistedSettings
@@ -2765,6 +3033,26 @@ class KeyxifViewModel(
                     restoreDraftSession()
                 }
             }
+        }
+    }
+
+    private fun pruneOrphanedStorage(draft: DraftSession?) {
+        val app = getApplication<Application>()
+        val cutoff = System.currentTimeMillis() - ORPHAN_FILE_RETENTION_MS
+        val retainedSources = (draft?.photoItems.orEmpty() + uiState.value.photos)
+            .mapNotNull { it.uri.path }
+            .toSet()
+        File(app.filesDir, "keyxif_sources").listFiles()
+            ?.filter { it.isFile && it.lastModified() < cutoff && it.path !in retainedSources }
+            ?.forEach { file -> runCatching { file.delete() } }
+
+        val hasActiveExport = workManager.getWorkInfosForUniqueWork(ExportWorker.UNIQUE_WORK_NAME)
+            .get()
+            .any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }
+        if (!hasActiveExport) {
+            File(app.cacheDir, "keyxif_export").listFiles()
+                ?.filter { it.isDirectory && it.lastModified() < cutoff }
+                ?.forEach { directory -> runCatching { directory.deleteRecursively() } }
         }
     }
 

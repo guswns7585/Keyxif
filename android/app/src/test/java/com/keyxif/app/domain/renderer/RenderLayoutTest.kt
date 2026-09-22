@@ -73,6 +73,18 @@ class RenderLayoutTest {
         assertEquals(1000f, layout.photoRect.bottom)
     }
 
+    @Test
+    fun liquidGlassFrameOverlaysTheUncroppedOriginalCanvas() {
+        val layout = calculateRenderLayout(LiquidGlassFrameRenderer().layoutSpec(), 1600, 1000, 4096)
+
+        assertEquals(TemplateLayoutMode.OverlayOnPhoto, layout.mode)
+        assertEquals(1600, layout.finalWidth)
+        assertEquals(1000, layout.finalHeight)
+        assertEquals(0f, layout.photoRect.left)
+        assertEquals(0f, layout.photoRect.top)
+        assertFullPhoto(layout, 1.6f)
+    }
+
     private fun assertFullPhoto(layout: RenderLayout, expectedAspectRatio: Float) {
         val actualAspectRatio = layout.photoRect.width / layout.photoRect.height
         assertTrue(abs(expectedAspectRatio - actualAspectRatio) < 0.002f)

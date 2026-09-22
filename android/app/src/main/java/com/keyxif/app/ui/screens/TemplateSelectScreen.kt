@@ -106,7 +106,7 @@ fun TemplateSelectScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(CardTemplate.entries.filterNot { it.name == "LiquidGlassFrame" }, key = { it.name }) { template ->
+            items(CardTemplate.entries, key = { it.name }) { template ->
                 TemplatePreviewCard(
                     template = template,
                     selected = (!customTemplateUiEnabled || selectedCustomTemplateId == null) && selectedTemplate == template,

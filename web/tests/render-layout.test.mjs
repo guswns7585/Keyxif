@@ -51,6 +51,16 @@ test('final long-side limit scales the composite and Plain Export stays unchange
   assert.equal(plain.photoRect.height(), 1000);
 });
 
+test('liquid glass frame overlays the uncropped original canvas', () => {
+  const layout = layoutFor('LiquidGlassFrame', 1600, 1000);
+  assert.equal(layout.mode, 'OverlayOnPhoto');
+  assert.equal(layout.finalWidth, 1600);
+  assert.equal(layout.finalHeight, 1000);
+  assert.equal(layout.photoRect.left, 0);
+  assert.equal(layout.photoRect.top, 0);
+  assertFullPhoto(layout, 1.6);
+});
+
 test('external layouts keep portrait and square photos uncropped', () => {
   for (const template of ['BottomSpecBar', 'PosterMargin', 'SideSpecRail']) {
     assertFullPhoto(layoutFor(template, 1000, 1600), 1000 / 1600);

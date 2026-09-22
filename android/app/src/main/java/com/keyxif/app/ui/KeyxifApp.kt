@@ -166,6 +166,7 @@ fun KeyxifApp(viewModel: KeyxifViewModel) {
     if (state.showDraftRestorePrompt && !state.showUpdateDialog) {
         DraftRestoreDialog(
             lastUpdatedAt = state.draftLastUpdatedAt,
+            incomingPhotoCount = state.photos.size,
             onRestore = viewModel::restoreDraftSession,
             onDiscard = viewModel::discardDraftSession,
         )
@@ -715,6 +716,7 @@ private fun StepBottomActions(
 @Composable
 private fun DraftRestoreDialog(
     lastUpdatedAt: Long?,
+    incomingPhotoCount: Int,
     onRestore: () -> Unit,
     onDiscard: () -> Unit,
 ) {
@@ -727,15 +729,23 @@ private fun DraftRestoreDialog(
     AlertDialog(
         onDismissRequest = {},
         title = { Text("이전 작업을 복구할까요?") },
-        text = { Text("임시 저장된 Keyxif 작업이 있습니다.\n마지막 저장: $dateText") },
+        text = {
+            Text(
+                if (incomingPhotoCount > 0) {
+                    "공유받은 사진 ${incomingPhotoCount}장이 있습니다. 이전 작업을 복구하면 이 사진도 함께 추가됩니다.\n마지막 저장: $dateText"
+                } else {
+                    "임시 저장된 Keyxif 작업이 있습니다.\n마지막 저장: $dateText"
+                },
+            )
+        },
         confirmButton = {
             Button(onClick = onRestore) {
-                Text("복구")
+                Text(if (incomingPhotoCount > 0) "복구하고 추가" else "복구")
             }
         },
         dismissButton = {
             TextButton(onClick = onDiscard) {
-                Text("새로 시작")
+                Text(if (incomingPhotoCount > 0) "공유 사진만 사용" else "새로 시작")
             }
         },
     )
