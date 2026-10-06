@@ -1,6 +1,7 @@
 package com.keyxif.app.domain.export
 
 import java.io.IOException
+import com.keyxif.app.util.SourceImageDecodeException
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -59,9 +60,33 @@ class ExportFailureTest {
     }
 
     @Test
-    fun nestedSecurityFailureKeepsSourceAccessCode() {
+    fun nestedSecurityFailureDuringSaveUsesGalleryPermissionCode() {
         val error = GalleryWriteException(SecurityException("denied"))
         val info = exportFailureInfo(ExportStageException(ExportStage.Save, error))
+        assertEquals(ExportFailureCode.GalleryPermission, info.code)
+    }
+
+    @Test
+    fun securityFailureDuringRenderUsesSourceAccessCode() {
+        val info = exportFailureInfo(
+            ExportStageException(ExportStage.Render, SecurityException("picker permission expired")),
+        )
         assertEquals(ExportFailureCode.SourceAccess, info.code)
+    }
+
+    @Test
+    fun partialSourceDecodeHasItsOwnCode() {
+        val error = SourceImageDecodeException("partial image")
+        val info = exportFailureInfo(ExportStageException(ExportStage.Render, error))
+        assertEquals(ExportFailureCode.SourceDecode, info.code)
+        assertTrue(info.userMessage.contains("원본 사진"))
+    }
+
+    @Test
+    fun galleryPublishFailureHasItsOwnCode() {
+        val error = GalleryPublishException(IllegalStateException("still pending"))
+        val info = exportFailureInfo(ExportStageException(ExportStage.Save, error))
+        assertEquals(ExportFailureCode.GalleryPublish, info.code)
+        assertTrue(info.userMessage.contains("사진 앱"))
     }
 }
