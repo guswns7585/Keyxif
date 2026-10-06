@@ -72,6 +72,7 @@ class ExportWorker(
         val savedIds = mutableListOf<String>()
         val failureDetails = JSONObject()
         val photoIds = payload.photos.map { it.id }
+        var diagnosticReportFile: File? = null
 
         try {
             setForeground(createForegroundInfo(current, total, success, failure, "Keyxif 저장 준비 중"))
@@ -109,6 +110,16 @@ class ExportWorker(
                     if (failureDetails.length() < MAX_FAILURE_DETAILS) {
                         failureDetails.put(photo.id, failureInfo.userMessage)
                     }
+                    diagnosticReportFile = ExportDiagnosticReporter.appendFailure(
+                        context = applicationContext,
+                        existingFile = diagnosticReportFile,
+                        failureInfo = failureInfo,
+                        error = error,
+                        photo = photo,
+                        payload = payload,
+                        attemptedLongSide = saveLongSide(payload.settings),
+                        itemIndex = current,
+                    )
                     false
                 }
 
@@ -145,6 +156,39 @@ class ExportWorker(
                     KEY_SAVED_IDS to JSONArray(savedIds).toString(),
                     KEY_FAILURE_DETAILS to failureDetails.toString(),
                     KEY_SAVED_URI to lastSavedUri?.toString(),
+                    KEY_DIAGNOSTIC_REPORT_PATH to diagnosticReportFile?.absolutePath,
+                ),
+            )
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            val failureInfo = exportFailureInfo(error)
+            val failedPhoto = payload.photos[(current - 1).coerceIn(0, payload.photos.lastIndex)]
+            diagnosticReportFile = ExportDiagnosticReporter.appendFailure(
+                context = applicationContext,
+                existingFile = diagnosticReportFile,
+                failureInfo = failureInfo,
+                error = error,
+                photo = failedPhoto,
+                payload = payload,
+                attemptedLongSide = saveLongSide(payload.settings),
+                itemIndex = current.coerceAtLeast(1),
+            )
+            failureDetails.put(failedPhoto.id, failureInfo.userMessage)
+            val allFailedIds = (failedIds + failedPhoto.id).distinct()
+            Log.e(TAG, "Export worker aborted code=${failureInfo.code.value}", error)
+            Result.failure(
+                workDataOf(
+                    KEY_CURRENT to current,
+                    KEY_TOTAL to total,
+                    KEY_SUCCESS_COUNT to success,
+                    KEY_FAILURE_COUNT to (failure + 1),
+                    KEY_MESSAGE to failureInfo.userMessage,
+                    KEY_PHOTO_IDS to JSONArray(photoIds).toString(),
+                    KEY_FAILED_IDS to JSONArray(allFailedIds).toString(),
+                    KEY_SAVED_IDS to JSONArray(savedIds).toString(),
+                    KEY_FAILURE_DETAILS to failureDetails.toString(),
+                    KEY_SAVED_URI to lastSavedUri?.toString(),
+                    KEY_DIAGNOSTIC_REPORT_PATH to diagnosticReportFile?.absolutePath,
                 ),
             )
         } finally {
@@ -353,6 +397,7 @@ class ExportWorker(
         const val KEY_SAVED_IDS = "saved_ids"
         const val KEY_FAILURE_DETAILS = "failure_details"
         const val KEY_SAVED_URI = "saved_uri"
+        const val KEY_DIAGNOSTIC_REPORT_PATH = "diagnostic_report_path"
         private const val TAG = "KeyxifExport"
         private const val MAX_FAILURE_DETAILS = 15
         private const val NOTIFICATION_ID = 2407

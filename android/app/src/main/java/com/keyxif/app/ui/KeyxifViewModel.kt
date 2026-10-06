@@ -123,6 +123,8 @@ import org.json.JSONArray
 
 private const val CUSTOM_TEMPLATE_RENDERING_ENABLED = false
 private const val ORPHAN_FILE_RETENTION_MS = 24L * 60L * 60L * 1000L
+private const val EXPORT_SUPPORT_EMAIL = "typenews902@gmail.com"
+private const val MAX_INLINE_DIAGNOSTIC_LENGTH = 20_000
 
 data class KeyxifUiState(
     val currentStep: AppStep = AppStep.Photos,
@@ -2757,6 +2759,8 @@ class KeyxifViewModel(
             JSONObject(output.getString(ExportWorker.KEY_FAILURE_DETAILS).orEmpty())
         }.getOrNull()
         val savedUri = output.getString(ExportWorker.KEY_SAVED_URI)?.let(Uri::parse)
+        val diagnosticReportPath = output.getString(ExportWorker.KEY_DIAGNOSTIC_REPORT_PATH)
+            ?.takeIf { File(it).isFile }
 
         _uiState.update { state ->
             state.copy(
@@ -2771,6 +2775,7 @@ class KeyxifViewModel(
                     } else {
                         null
                     },
+                    diagnosticReportPath = diagnosticReportPath,
                 ),
                 photos = state.photos.map { photo ->
                     when {
@@ -3087,6 +3092,48 @@ class KeyxifViewModel(
         runCatching {
             getApplication<Application>().startActivity(intent)
         }
+    }
+
+    fun sendExportDiagnosticReport() {
+        val app = getApplication<Application>()
+        val reportPath = uiState.value.exportProgress.diagnosticReportPath
+        val report = reportPath?.let(::File)?.takeIf { it.isFile }
+        if (report == null) {
+            _uiState.update { it.copy(uiMessage = "전송할 오류 로그를 찾을 수 없습니다.") }
+            return
+        }
+        val uri = FileProvider.getUriForFile(
+            app,
+            "${BuildConfig.APPLICATION_ID}.fileprovider",
+            report,
+        )
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(EXPORT_SUPPORT_EMAIL))
+            putExtra(Intent.EXTRA_SUBJECT, "Keyxif 저장 오류 로그 ${BuildConfig.VERSION_NAME}")
+            putExtra(
+                Intent.EXTRA_TEXT,
+                buildString {
+                    appendLine("Keyxif 이미지 저장 중 오류가 발생했습니다.")
+                    appendLine("첨부된 진단 로그에는 사진이나 빌드 정보가 포함되지 않습니다.")
+                    appendLine()
+                    append(report.readText(Charsets.UTF_8).take(MAX_INLINE_DIAGNOSTIC_LENGTH))
+                },
+            )
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newUri(app.contentResolver, "Keyxif export diagnostic", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(sendIntent, "오류 로그 보내기").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { app.startActivity(chooser) }
+            .onFailure {
+                _uiState.update { state ->
+                    state.copy(uiMessage = "메일 앱을 열 수 없습니다. 기기에 메일 앱이 설정되어 있는지 확인해 주세요.")
+                }
+            }
     }
 
     @Suppress("DEPRECATION")

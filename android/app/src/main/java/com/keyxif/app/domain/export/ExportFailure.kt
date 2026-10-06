@@ -1,6 +1,7 @@
 package com.keyxif.app.domain.export
 
 import java.io.IOException
+import com.keyxif.app.util.SourceImageDecodeException
 
 internal enum class ExportStage { Render, Save }
 
@@ -11,6 +12,7 @@ internal class ExportStageException(
 
 internal enum class ExportFailureCode(val value: String) {
     SourceAccess("KX-SAVE-101"),
+    SourceDecode("KX-SAVE-102"),
     OutOfMemory("KX-SAVE-201"),
     Render("KX-SAVE-202"),
     Encoding("KX-SAVE-301"),
@@ -18,6 +20,8 @@ internal enum class ExportFailureCode(val value: String) {
     GalleryInsert("KX-SAVE-501"),
     GalleryWrite("KX-SAVE-502"),
     StorageIo("KX-SAVE-503"),
+    GalleryPublish("KX-SAVE-504"),
+    GalleryPermission("KX-SAVE-505"),
     Unknown("KX-SAVE-901"),
 }
 
@@ -45,9 +49,17 @@ internal fun exportFailureInfo(error: Throwable): ExportFailureInfo {
             ExportFailureCode.OutOfMemory,
             "메모리가 부족해 저장하지 못했습니다. 출력 해상도를 낮춰 다시 시도해 주세요.",
         )
+        causes.any { it is SecurityException } && stage == ExportStage.Save -> ExportFailureInfo(
+            ExportFailureCode.GalleryPermission,
+            "사진 앱이 저장 요청을 거부했습니다. 앱 권한과 사진 앱 상태를 확인해 주세요.",
+        )
         causes.any { it is SecurityException } -> ExportFailureInfo(
             ExportFailureCode.SourceAccess,
             "사진 또는 저장소 접근 권한이 없습니다. 사진을 다시 추가해 주세요.",
+        )
+        causes.any { it is SourceImageDecodeException } -> ExportFailureInfo(
+            ExportFailureCode.SourceDecode,
+            "원본 사진을 완전하게 읽지 못했습니다. 사진을 다시 선택하거나 원본을 다시 저장한 뒤 시도해 주세요.",
         )
         causes.any { it is ImageEncodingException } -> ExportFailureInfo(
             ExportFailureCode.Encoding,
@@ -64,6 +76,10 @@ internal fun exportFailureInfo(error: Throwable): ExportFailureInfo {
         causes.any { it is GalleryWriteException } -> ExportFailureInfo(
             ExportFailureCode.GalleryWrite,
             "갤러리에 파일을 기록하지 못했습니다. 남은 저장 공간을 확인해 주세요.",
+        )
+        causes.any { it is GalleryPublishException } -> ExportFailureInfo(
+            ExportFailureCode.GalleryPublish,
+            "저장된 파일을 사진 앱에 공개하지 못했습니다. 기기를 다시 시작한 뒤 시도해 주세요.",
         )
         stage == ExportStage.Render -> ExportFailureInfo(
             ExportFailureCode.Render,

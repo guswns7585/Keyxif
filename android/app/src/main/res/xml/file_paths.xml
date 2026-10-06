@@ -6,4 +6,7 @@
     <files-path
         name="updates_files"
         path="updates/" />
+    <files-path
+        name="export_diagnostics"
+        path="export_diagnostics/" />
 </paths>

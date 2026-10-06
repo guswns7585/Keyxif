@@ -199,6 +199,7 @@ data class ExportProgress(
     val successCount: Int = 0,
     val failureCount: Int = 0,
     val message: String? = null,
+    val diagnosticReportPath: String? = null,
 )
 
 data class UpdateInfo(

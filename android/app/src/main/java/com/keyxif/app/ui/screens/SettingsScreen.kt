@@ -605,7 +605,7 @@ private fun AboutSettings() {
     InfoRow("오픈소스 라이선스", "준비 중")
     HorizontalDivider()
     Text(
-        text = "사진과 빌드 정보는 기본적으로 기기 안에서 처리됩니다. 서버 업로드나 외부 전송 없이, 사용자가 직접 저장한 결과물만 갤러리에 저장됩니다.",
+        text = "사진과 빌드 정보는 기기 안에서 처리됩니다. 저장 오류가 발생한 뒤 사용자가 직접 로그 전송을 선택한 경우에만 사진이 제외된 기기·오류 정보가 메일 앱으로 전달됩니다.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

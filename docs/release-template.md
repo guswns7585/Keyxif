@@ -1,14 +1,14 @@
 ## Keyxif Release
 
 ### Changes
-- Preserve the selected WEBP or PNG format while retrying encoder failures at memory-safe resolutions.
-- Stage encoded output before publishing and recover from OEM-specific MediaStore pending-state behavior.
-- Separate source access, rendering, encoding, temporary storage, and gallery failures with reportable `KX-SAVE` error codes.
-- Avoid retaining Liquid Glass preview caches during final export and release duplicate blur bitmaps promptly.
-- Keep batch exports running when individual photos fail and report the first actionable failure reason.
-- Upgrade WorkManager to the current stable release for more reliable long-running foreground exports.
-- Add MediaStore tests for public output, 40 sequential WEBP saves, and 4K WEBP format preservation.
-- Synchronize Android and Web version metadata for 1.1.3.
+- Reject incomplete or damaged source images instead of producing horizontally corrupted output.
+- Preserve the selected WEBP or PNG format and verify dimensions, MIME type, and decodability before gallery publication.
+- Retry gallery publication through multiple MediaStore volumes, folders, pending modes, and a collision-safe filename fallback.
+- Distinguish source decoding, gallery permission, insertion, writing, and publication failures with reportable `KX-SAVE` codes.
+- Generate privacy-conscious diagnostic reports containing device, storage, and exception details without photo pixels or build information.
+- Let users review and send an export diagnostic report to support from the save screen after a failure.
+- Add device tests for truncated-image rejection, stable ARGB decoding, public output, 40 sequential saves, and 4K WEBP preservation.
+- Synchronize Android and Web version metadata for 1.1.4.
 
 ### Install Notes
 - The APK must be signed with the same package name and signing key as the installed app.

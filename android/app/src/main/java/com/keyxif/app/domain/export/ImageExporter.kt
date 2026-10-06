@@ -3,6 +3,8 @@ package com.keyxif.app.domain.export
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -142,6 +144,7 @@ class ImageExporter {
             if (file.length() <= 0L) {
                 throw ImageEncodingException(IllegalStateException("인코딩된 이미지가 비어 있습니다."))
             }
+            validateEncodedFile(file, bitmap.width, bitmap.height, outputFormat)
             return EncodedImage(
                 file = file,
                 displayName = displayName.withExtension(outputFormat.extension),
@@ -164,67 +167,71 @@ class ImageExporter {
         outputFormat: OutputFormat,
         directoryName: String,
     ): Uri {
-        val resolver = context.contentResolver
-        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        } else {
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        }
         val safeDirectory = FileNameUtils.sanitize(directoryName).ifBlank { "Keyxif" }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return insertAndCopy(
                 context = context,
-                collection = collection,
+                collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 encodedFile = encodedFile,
                 displayName = displayName,
                 outputFormat = outputFormat,
-                safeDirectory = safeDirectory,
+                relativePath = null,
                 pending = false,
             )
         }
-
-        val pendingUri = try {
-            insertAndCopy(
-                context = context,
-                collection = collection,
-                encodedFile = encodedFile,
-                displayName = displayName,
-                outputFormat = outputFormat,
-                safeDirectory = safeDirectory,
-                pending = true,
-            )
-        } catch (error: Throwable) {
-            if (error is SecurityException || error is OutOfMemoryError) throw error
-            return insertAndCopy(
-                context = context,
-                collection = collection,
-                encodedFile = encodedFile,
-                displayName = displayName,
-                outputFormat = outputFormat,
-                safeDirectory = safeDirectory,
-                pending = false,
-            )
-        }
-        val published = runCatching {
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.IS_PENDING, 0)
+        val plans = galleryPublishPlans(safeDirectory)
+        var firstFailure: Throwable? = null
+        for ((index, plan) in plans.withIndex()) {
+            val attemptName = if (plan.uniqueName) {
+                displayName.withCollisionSuffix(System.currentTimeMillis())
+            } else {
+                displayName
             }
-            resolver.update(pendingUri, values, null, null) > 0 || !isPending(context, pendingUri)
-        }.getOrDefault(false)
-        if (published) return pendingUri
+            try {
+                return publishWithPlan(
+                    context = context,
+                    encodedFile = encodedFile,
+                    displayName = attemptName,
+                    outputFormat = outputFormat,
+                    plan = plan,
+                )
+            } catch (error: Throwable) {
+                if (error is OutOfMemoryError) throw error
+                if (firstFailure == null) firstFailure = error else firstFailure.addSuppressed(error)
+                android.util.Log.w(TAG, "MediaStore publish attempt ${index + 1}/${plans.size} failed: $plan", error)
+            }
+        }
+        throw firstFailure ?: GalleryInsertException(IllegalStateException("No MediaStore publish plan succeeded"))
+    }
 
-        // Some OEM MediaStore providers reject or misreport the pending update. Reinsert the
-        // already encoded file as public content instead of failing the entire export.
-        runCatching { resolver.delete(pendingUri, null, null) }
-        return insertAndCopy(
+    private fun publishWithPlan(
+        context: Context,
+        encodedFile: File,
+        displayName: String,
+        outputFormat: OutputFormat,
+        plan: GalleryPublishPlan,
+    ): Uri {
+        val resolver = context.contentResolver
+        val uri = insertAndCopy(
             context = context,
-            collection = collection,
+            collection = plan.collection,
             encodedFile = encodedFile,
             displayName = displayName,
             outputFormat = outputFormat,
-            safeDirectory = safeDirectory,
-            pending = false,
+            relativePath = plan.relativePath,
+            pending = plan.pending,
         )
+        if (!plan.pending) return uri
+        val published = try {
+            val values = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            resolver.update(uri, values, null, null) > 0 || !isPending(context, uri)
+        } catch (error: Throwable) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw GalleryPublishException(error)
+        }
+        if (published) return uri
+        runCatching { resolver.delete(uri, null, null) }
+        throw GalleryPublishException(IllegalStateException("MediaStore item remained pending"))
     }
 
     private fun insertAndCopy(
@@ -233,7 +240,7 @@ class ImageExporter {
         encodedFile: File,
         displayName: String,
         outputFormat: OutputFormat,
-        safeDirectory: String,
+        relativePath: String?,
         pending: Boolean,
     ): Uri {
         val resolver = context.contentResolver
@@ -241,7 +248,7 @@ class ImageExporter {
             put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Images.Media.MIME_TYPE, outputFormat.mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$safeDirectory")
+                relativePath?.let { put(MediaStore.Images.Media.RELATIVE_PATH, it) }
                 if (pending) put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }
@@ -277,6 +284,48 @@ class ImageExporter {
         } ?: true
     }
 
+    private fun validateEncodedFile(
+        file: File,
+        expectedWidth: Int,
+        expectedHeight: Int,
+        outputFormat: OutputFormat,
+    ) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth != expectedWidth || bounds.outHeight != expectedHeight) {
+            throw ImageEncodingException(
+                IllegalStateException(
+                    "Encoded ${bounds.outWidth}x${bounds.outHeight}; expected ${expectedWidth}x${expectedHeight}",
+                ),
+            )
+        }
+        val decoded = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    decoder.setOnPartialImageListener { false }
+                    val longest = maxOf(info.size.width, info.size.height).coerceAtLeast(1)
+                    val ratio = minOf(1f, VALIDATION_LONG_SIDE.toFloat() / longest)
+                    decoder.setTargetSize(
+                        (info.size.width * ratio).toInt().coerceAtLeast(1),
+                        (info.size.height * ratio).toInt().coerceAtLeast(1),
+                    )
+                }
+            } else {
+                BitmapFactory.decodeFile(file.absolutePath)
+            }
+        } catch (error: Throwable) {
+            throw ImageEncodingException(error)
+        } ?: throw ImageEncodingException(IllegalStateException("Encoded image cannot be decoded"))
+        decoded.recycle()
+        val expectedMime = outputFormat.mimeType
+        if (!bounds.outMimeType.equals(expectedMime, ignoreCase = true)) {
+            throw ImageEncodingException(
+                IllegalStateException("Encoded MIME ${bounds.outMimeType}; expected $expectedMime"),
+            )
+        }
+    }
+
     private data class EncodedImage(
         val file: File,
         val displayName: String,
@@ -287,7 +336,32 @@ class ImageExporter {
         const val DEFAULT_WEBP_QUALITY = 92
         private const val STAGING_DIRECTORY = "keyxif_export"
         private const val STALE_FILE_AGE_MS = 24L * 60L * 60L * 1_000L
+        private const val VALIDATION_LONG_SIDE = 96
+        private const val TAG = "KeyxifExporter"
     }
+}
+
+internal data class GalleryPublishPlan(
+    val collection: Uri,
+    val relativePath: String?,
+    val pending: Boolean,
+    val uniqueName: Boolean = false,
+)
+
+internal fun galleryPublishPlans(safeDirectory: String): List<GalleryPublishPlan> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return emptyList()
+    val primary = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    val legacy = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    val appFolder = "${Environment.DIRECTORY_PICTURES}/$safeDirectory"
+    return listOf(
+        GalleryPublishPlan(primary, appFolder, pending = true),
+        GalleryPublishPlan(primary, Environment.DIRECTORY_PICTURES, pending = true),
+        GalleryPublishPlan(legacy, appFolder, pending = true),
+        GalleryPublishPlan(primary, null, pending = true),
+        GalleryPublishPlan(primary, appFolder, pending = false),
+        GalleryPublishPlan(primary, Environment.DIRECTORY_PICTURES, pending = false),
+        GalleryPublishPlan(legacy, null, pending = false, uniqueName = true),
+    ).distinct()
 }
 
 internal open class ExportStorageException(
@@ -307,8 +381,18 @@ internal class GalleryInsertException(cause: Throwable) :
 internal class GalleryWriteException(cause: Throwable) :
     ExportStorageException("갤러리에 이미지 데이터를 기록하지 못했습니다.", cause)
 
+internal class GalleryPublishException(cause: Throwable) :
+    ExportStorageException("갤러리 저장 항목을 공개하지 못했습니다.", cause)
+
 internal fun String.withExtension(extension: String): String =
     "${substringBeforeLast('.', this)}.$extension"
+
+private fun String.withCollisionSuffix(timestamp: Long): String {
+    val extension = substringAfterLast('.', missingDelimiterValue = "")
+    val base = if (extension.isBlank()) this else substringBeforeLast('.')
+    val suffix = timestamp.toString().takeLast(6)
+    return if (extension.isBlank()) "${base}_$suffix" else "${base}_$suffix.$extension"
+}
 
 private val OutputFormat.extension: String
     get() = when (this) {
